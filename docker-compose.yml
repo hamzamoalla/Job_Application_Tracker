@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: jobtracker
+      POSTGRES_USER: jobtracker
+      POSTGRES_PASSWORD: jobtracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobtracker -d jobtracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: Admin12345!
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - models_data:/app/models
+ 
+  classifier-worker:
+    build:
+      context: .
+      dockerfile: services/classifier-worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
+      POLL_SECONDS: 15
+      MIN_CONFIDENCE: 0.80
+      REVIEW_CONFIDENCE_THRESHOLD: 0.70
+      SENTENCE_TRANSFORMERS_HOME: /app/st_cache
+      HF_HOME: /app/hf_cache
+      # Repli NER (GLiNER) pour l'extraction entreprise/poste quand les
+      # regex échouent. Mettre à "false" pour le désactiver sans
+      # modifier le code (ex. ressources limitées, modèle non voulu).
+      ENABLE_GLINER_FALLBACK: "true"
+      GLINER_MODEL_NAME: urchade/gliner_multi-v2.1
+      GLINER_THRESHOLD: 0.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - models_data:/app/models
+      - st_cache:/app/st_cache
+      - hf_cache:/app/hf_cache
+ 
+  trainer:
+    build:
+      context: .
+      dockerfile: services/trainer/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
+      SENTENCE_TRANSFORMERS_HOME: /app/st_cache
+    volumes:
+      - models_data:/app/models
+      - st_cache:/app/st_cache
+ 
+volumes:
+  postgres_data:
+  models_data:
+  pgadmin_data:
+  # Cache local du modèle d'embedding sentence-transformers (~470 Mo).
+  # Partagé entre trainer et classifier-worker pour n'être téléchargé
+  # qu'une seule fois, au lieu d'être re-téléchargé à chaque conteneur
+  # reconstruit ou redémarré.
+  st_cache:
+  # Cache local du modèle GLiNER (~350 Mo), utilisé uniquement par
+  # classifier-worker (repli NER pour l'extraction entreprise/poste).
+  hf_cache:
