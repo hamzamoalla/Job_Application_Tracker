@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Job Tracker — Tableau de bord</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f4f1;
+    --surface: #ffffff;
+    --surface-2: #faf9f6;
+    --border: #e4e1da;
+    --text: #221f1a;
+    --text-dim: #726b5c;
+    --accent: #b4532a;
+    --accent-ink: #ffffff;
+    --ok: #3f7a4f;
+    --ok-bg: #e7f2e9;
+    --warn: #9a6b17;
+    --warn-bg: #faf0db;
+    --bad: #a3392f;
+    --bad-bg: #f8e6e3;
+    --neutral: #6b6456;
+    --neutral-bg: #efece5;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --display: "Manrope", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1815;
+      --surface: #24211c;
+      --surface-2: #211e19;
+      --border: #38342c;
+      --text: #f1ede4;
+      --text-dim: #a69d8a;
+      --accent: #e08a5c;
+      --accent-ink: #1a1815;
+      --ok: #7cc48f;
+      --ok-bg: #233023;
+      --warn: #e0b85c;
+      --warn-bg: #332a16;
+      --bad: #e68c81;
+      --bad-bg: #352120;
+      --neutral: #a69d8a;
+      --neutral-bg: #2b2820;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1815;
+    --surface: #24211c;
+    --surface-2: #211e19;
+    --border: #38342c;
+    --text: #f1ede4;
+    --text-dim: #a69d8a;
+    --accent: #e08a5c;
+    --accent-ink: #1a1815;
+    --ok: #7cc48f;
+    --ok-bg: #233023;
+    --warn: #e0b85c;
+    --warn-bg: #332a16;
+    --bad: #e68c81;
+    --bad-bg: #352120;
+    --neutral: #a69d8a;
+    --neutral-bg: #2b2820;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 var(--display);
+    padding-inline: max(16px, env(safe-area-inset-left, 0px));
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding-block: 24px 48px; }
+
+  header.top {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding-bottom: 18px; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  }
+  header.top h1 {
+    font-family: var(--display); font-weight: 800; font-size: 1.3rem; margin: 0;
+    letter-spacing: -0.01em; flex: 1 1 auto; min-width: 180px;
+  }
+  .api-row { display: flex; gap: 8px; align-items: center; flex: 2 1 320px; min-width: 0; }
+  .api-row input {
+    flex: 1 1 auto; min-width: 0; font: 13px/1.4 var(--mono);
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 7px; padding: 8px 10px;
+  }
+  button {
+    font: 600 13px/1 var(--display); border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); border-radius: 7px;
+    padding: 9px 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--text-dim); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #status-line { font: 500 12px/1.4 var(--mono); color: var(--text-dim); min-width: 100%; order: 10; }
+
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px; margin-bottom: 24px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .tile .n { font-family: var(--mono); font-weight: 600; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+  .tile .l { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+  nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  nav.tabs button {
+    border: none; border-bottom: 2px solid transparent; border-radius: 0;
+    background: transparent; padding: 10px 4px; margin-right: 18px; color: var(--text-dim);
+  }
+  nav.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav.tabs button .count {
+    font-family: var(--mono); font-size: 11px; background: var(--neutral-bg); color: var(--text-dim);
+    padding: 1px 6px; border-radius: 99px; margin-left: 6px;
+  }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filters select {
+    font: 500 13px var(--display); background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    text-align: left; font: 600 11px var(--display); text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-dim); padding: 0 10px 8px; border-bottom: 1px solid var(--border);
+  }
+  thead th.sortable { cursor: pointer; user-select: none; }
+  thead th.sortable:hover { color: var(--text); }
+  thead th .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.4; }
+  thead th.active-sort { color: var(--accent); }
+  thead th.active-sort .sort-icon { opacity: 1; color: var(--accent); }
+
+  tbody td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .table-scroll table { min-width: 560px; }
+
+  .badge {
+    display: inline-block; font: 600 11px var(--mono); padding: 3px 8px; border-radius: 99px;
+    white-space: nowrap;
+  }
+  .badge.SENT, .badge.OTHER, .badge.UNKNOWN { background: var(--neutral-bg); color: var(--neutral); }
+  .badge.IN_REVIEW { background: var(--warn-bg); color: var(--warn); }
+  .badge.INTERVIEW { background: var(--ok-bg); color: var(--ok); }
+  .badge.REJECTED, .badge.REJECTION { background: var(--bad-bg); color: var(--bad); }
+  .badge.JOB_APPLICATION { background: var(--ok-bg); color: var(--ok); }
+  .src { font: 500 11px var(--mono); color: var(--text-dim); }
+
+  .cards { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  }
+  .card .meta { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .card .subject { font-weight: 700; margin: 2px 0 2px; }
+  .card .from { font: 500 12px var(--mono); color: var(--text-dim); }
+  .card .conf { font: 600 12px var(--mono); color: var(--text-dim); }
+  .card .snippet {
+    margin-top: 8px; color: var(--text-dim); font-size: 13px; line-height: 1.55;
+    max-height: 4.6em; overflow: hidden;
+  }
+  .card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .card .actions button { font-size: 12px; padding: 7px 10px; }
+  .card.done { opacity: 0.45; }
+
+  .empty { color: var(--text-dim); padding: 30px 10px; text-align: center; font-size: 13.5px; }
+  .hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+
+  .link { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .link:hover { text-decoration: underline; }
+  .gmail-link {
+    display: inline-flex; align-items: center; gap: 4px; font: 600 12px var(--display);
+    color: var(--accent); text-decoration: none; white-space: nowrap;
+  }
+  .gmail-link:hover { text-decoration: underline; }
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .row-actions button, .row-actions a { font-size: 12px; padding: 6px 9px; }
+
+  /* Fenêtre modale */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 50;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 5vh 16px; overflow-y: auto;
+  }
+  .modal-overlay[hidden] { display: none; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    max-width: 680px; width: 100%; padding: 20px; margin-bottom: 5vh;
+  }
+  .modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .modal-head h2 { font-size: 1.05rem; margin: 0; font-family: var(--display); }
+  .modal-close {
+    border: none; background: var(--surface-2); border-radius: 7px; width: 28px; height: 28px;
+    padding: 0; font-size: 16px; line-height: 1; flex: none;
+  }
+  .modal-body { margin-top: 14px; }
+  .thread-email {
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    background: var(--surface-2);
+  }
+  .thread-email:last-child { margin-bottom: 0; }
+  .thread-email .meta-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .thread-email .who { font: 500 12px var(--mono); color: var(--text-dim); }
+  .thread-email .subj { font-weight: 700; margin: 6px 0 8px; }
+  .body-text {
+    font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word;
+    color: var(--text); max-height: 280px; overflow-y: auto; margin: 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  }
+  .modal-foot { margin-top: 12px; display: flex; justify-content: flex-end; }
+
+  @media (max-width: 520px) {
+    header.top { flex-direction: column; align-items: stretch; }
+    .api-row { order: 2; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>Job Tracker</h1>
+    <div class="api-row">
+      <input id="api-url" type="text" spellcheck="false" placeholder="http://localhost:8000" />
+      <button id="refresh-btn">Actualiser</button>
+    </div>
+    <div id="status-line">—</div>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <nav class="tabs">
+    <button data-panel="applications" class="active">Candidatures<span class="count" id="count-applications"></span></button>
+    <button data-panel="review">À relabelliser<span class="count" id="count-review"></span></button>
+    <button data-panel="emails">Tous les emails<span class="count" id="count-emails"></span></button>
+  </nav>
+
+  <section class="panel active" id="panel-applications">
+    <div class="filters">
+      <select id="app-status-filter">
+        <option value="">Tous les statuts</option>
+        <option value="SENT">SENT</option>
+        <option value="IN_REVIEW">IN_REVIEW</option>
+        <option value="INTERVIEW">INTERVIEW</option>
+        <option value="REJECTED">REJECTED</option>
+      </select>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="company">Entreprise <span class="sort-icon">↕</span></th>
+            <th class="sortable" data-sort="position">Poste <span class="sort-icon">↕</span></th>
+            <th>Statut</th>
+            <th>Source</th>
+            <th class="sortable active-sort" data-sort="date">Dernier e-mail <span class="sort-icon">▼</span></th>
+            <th>Emails</th>
+          </tr>
+        </thead>
+        <tbody id="applications-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-review">
+    <p class="hint">Emails reçus avec une confiance de classification faible (&lt; 0.70). Choisissez le vrai label : il est envoyé à <code>/emails/{id}/label</code> et réinjecté dans l'entraînement.</p>
+    <div class="cards" id="review-cards"></div>
+  </section>
+
+  <section class="panel" id="panel-emails">
+    <div class="filters">
+      <select id="email-direction-filter">
+        <option value="">Toutes directions</option>
+        <option value="RECEIVED">RECEIVED</option>
+        <option value="SENT">SENT</option>
+      </select>
+      <select id="email-class-filter">
+        <option value="">Toutes classifications</option>
+        <option value="IN_REVIEW">IN_REVIEW</option>
+        <option value="REJECTION">REJECTION</option>
+        <option value="INTERVIEW">INTERVIEW</option>
+        <option value="JOB_APPLICATION">JOB_APPLICATION</option>
+        <option value="OTHER">OTHER</option>
+      </select>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Sujet</th><th>De / À</th><th>Classification</th><th>Confiance</th><th></th></tr>
+        </thead>
+        <tbody id="emails-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <h2 id="modal-title">Email</h2>
+        <button class="modal-close" id="modal-close" aria-label="Fermer">×</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LABELS = ["IN_REVIEW", "REJECTION", "INTERVIEW", "OTHER", "JOB_APPLICATION"];
+
+  function getApiUrl() {
+    var saved = null;
+    try { saved = localStorage.getItem("jobtracker_api_url"); } catch (e) {}
+    return (saved || "http://localhost:8000").replace(/\/+$/, "");
+  }
+  function setApiUrl(value) {
+    try { localStorage.setItem("jobtracker_api_url", value); } catch (e) {}
+  }
+
+  var apiInput = document.getElementById("api-url");
+  apiInput.value = getApiUrl();
+  apiInput.addEventListener("change", function () {
+    setApiUrl(apiInput.value.trim());
+    loadAll();
+  });
+  document.getElementById("refresh-btn").addEventListener("click", loadAll);
+
+  function setStatus(msg, isError) {
+    var el = document.getElementById("status-line");
+    el.textContent = msg;
+    el.style.color = isError ? "var(--bad)" : "var(--text-dim)";
+  }
+
+  function api(path) {
+    var base = getApiUrl();
+    return fetch(base + path, { headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error(path + " -> HTTP " + r.status);
+        return r.json();
+      });
+  }
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function fmtDate(value) {
+    if (!value) return "—";
+    try {
+      var d = new Date(value);
+      return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return value; }
+  }
+
+  function fmtConfidence(c) {
+    if (c === null || c === undefined) return "—";
+    return Number(c).toFixed(2);
+  }
+
+  function gmailUrl(gmailId) {
+    if (!gmailId) return null;
+    return "https://mail.google.com/mail/u/0/#all/" + encodeURIComponent(gmailId);
+  }
+
+  function gmailLinkHtml(gmailId) {
+    var url = gmailUrl(gmailId);
+    if (!url) return "";
+    return '<a class="gmail-link" href="' + url + '" target="_blank" rel="noopener">Ouvrir dans Gmail ↗</a>';
+  }
+
+  // ---------------------------------------------------------------
+  // Modale
+  // ---------------------------------------------------------------
+  var modalOverlay = document.getElementById("modal-overlay");
+  var modalTitle = document.getElementById("modal-title");
+  var modalBody = document.getElementById("modal-body");
+
+  function openModal(title, bodyHtml) {
+    modalTitle.textContent = title;
+    modalBody.innerHTML = bodyHtml;
+    modalOverlay.hidden = false;
+  }
+  function closeModal() {
+    modalOverlay.hidden = true;
+    modalBody.innerHTML = "";
+  }
+  document.getElementById("modal-close").addEventListener("click", closeModal);
+  modalOverlay.addEventListener("click", function (e) {
+    if (e.target === modalOverlay) closeModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !modalOverlay.hidden) closeModal();
+  });
+
+  function emailBlockHtml(e) {
+    var who = e.direction === "SENT"
+      ? "À : " + escapeHtml(e.recipient || "—")
+      : "De : " + escapeHtml(e.sender || "—");
+
+    var classBadge = e.classification
+      ? '<span class="badge ' + escapeHtml(e.classification) + '">' + escapeHtml(e.classification) + '</span>'
+      : '';
+
+    return '<div class="thread-email">' +
+      '<div class="meta-row">' +
+        '<span class="who">' + who + " · " + (e.direction || "") + "</span>" +
+        '<div style="display:flex; gap:8px; align-items:center;">' +
+          classBadge +
+          '<span class="who">' + fmtDate(e.sent_at) + "</span>" +
+        "</div>" +
+      "</div>" +
+      '<div class="subj">' + escapeHtml(e.subject || "(sans sujet)") + "</div>" +
+      '<pre class="body-text">' + escapeHtml((e.body || "").trim() || "(corps vide)") + "</pre>" +
+      '<div class="modal-foot">' + gmailLinkHtml(e.gmail_id) + "</div>" +
+    "</div>";
+  }
+
+  function showSingleEmail(emailId) {
+    openModal("Email", '<div class="empty">Chargement…</div>');
+    api("/emails/" + emailId).then(function (full) {
+      modalTitle.textContent = full.subject || "(sans sujet)";
+      modalBody.innerHTML = emailBlockHtml(full);
+    }).catch(function (err) {
+      modalBody.innerHTML = '<div class="empty">Impossible de charger cet email : ' + escapeHtml(err.message) + "</div>";
+    });
+  }
+
+  function showApplicationThread(applicationId, label) {
+    openModal(label || "Fil de la candidature", '<div class="empty">Chargement…</div>');
+    api("/applications/" + applicationId).then(function (full) {
+      modalTitle.textContent = (full.company || "Candidature") + (full.position ? " — " + full.position : "");
+      var emails = full.emails || [];
+      modalBody.innerHTML = emails.length
+        ? emails.map(emailBlockHtml).join("")
+        : '<div class="empty">Aucun email rattaché à cette candidature.</div>';
+    }).catch(function (err) {
+      modalBody.innerHTML = '<div class="empty">Impossible de charger ce fil : ' + escapeHtml(err.message) + "</div>";
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Onglets
+  // ---------------------------------------------------------------
+  var tabButtons = document.querySelectorAll("nav.tabs button");
+  tabButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      tabButtons.forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Tuiles de statistiques
+  // ---------------------------------------------------------------
+  function renderTiles(stats) {
+    var statuses = stats.statuses || {};
+    var tiles = [
+      { n: stats.applications, l: "Candidatures" },
+      { n: stats.emails, l: "Emails importés" },
+      { n: stats.unprocessed_emails, l: "Non traités" },
+      { n: stats.needs_review_emails, l: "À relabelliser" },
+      { n: statuses.INTERVIEW || 0, l: "Entretiens" },
+      { n: statuses.REJECTED || 0, l: "Refus" },
+    ];
+    document.getElementById("tiles").innerHTML = tiles.map(function (t) {
+      return '<div class="tile"><div class="n">' + t.n + '</div><div class="l">' + t.l + '</div></div>';
+    }).join("");
+  }
+
+  // ---------------------------------------------------------------
+  // Candidatures & Tri dynamique au clic sur les colonnes
+  // ---------------------------------------------------------------
+  var allApplications = [];
+  var currentSortField = "date";
+  var currentSortOrder = "desc";
+
+  function handleHeaderSort(field) {
+    if (currentSortField === field) {
+      currentSortOrder = currentSortOrder === "asc" ? "desc" : "asc";
+    } else {
+      currentSortField = field;
+      currentSortOrder = field === "date" ? "desc" : "asc";
+    }
+    updateThIcons();
+    renderApplications();
+  }
+
+  function updateThIcons() {
+    document.querySelectorAll("th.sortable").forEach(function (th) {
+      var field = th.dataset.sort;
+      var iconSpan = th.querySelector(".sort-icon");
+      if (field === currentSortField) {
+        th.classList.add("active-sort");
+        iconSpan.textContent = currentSortOrder === "asc" ? "▲" : "▼";
+      } else {
+        th.classList.remove("active-sort");
+        iconSpan.textContent = "↕";
+      }
+    });
+  }
+
+  document.querySelectorAll("th.sortable").forEach(function (th) {
+    th.addEventListener("click", function () {
+      handleHeaderSort(th.dataset.sort);
+    });
+  });
+
+  function renderApplications() {
+    var filter = document.getElementById("app-status-filter").value;
+    var rows = allApplications.filter(function (a) { return !filter || a.status === filter; });
+
+    rows.sort(function (a, b) {
+      var valA = "", valB = "";
+      if (currentSortField === "company") {
+        valA = (a.company || "").toLowerCase();
+        valB = (b.company || "").toLowerCase();
+      } else if (currentSortField === "position") {
+        valA = (a.position || "").toLowerCase();
+        valB = (b.position || "").toLowerCase();
+      } else { // "date"
+        valA = a.last_email_date || a.updated_at || a.application_date || "";
+        valB = b.last_email_date || b.updated_at || b.application_date || "";
+      }
+
+      if (valA < valB) return currentSortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return currentSortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    var body = document.getElementById("applications-body");
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">Aucune candidature' + (filter ? " avec ce statut." : " pour l'instant.") + '</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(function (a) {
+      var displayDate = a.last_email_date || a.updated_at;
+      return "<tr>" +
+        "<td>" + escapeHtml(a.company || "—") + "</td>" +
+        "<td>" + escapeHtml(a.position || "—") + "</td>" +
+        '<td><span class="badge ' + a.status + '">' + a.status + "</span></td>" +
+        '<td class="src">' + escapeHtml(a.source || "—") + "</td>" +
+        "<td>" + fmtDate(displayDate) + "</td>" +
+        '<td><button class="view-thread-btn" data-app-id="' + a.id + '">Voir</button></td>' +
+        "</tr>";
+    }).join("");
+
+    body.querySelectorAll(".view-thread-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showApplicationThread(btn.dataset.appId);
+      });
+    });
+  }
+
+  document.getElementById("app-status-filter").addEventListener("change", renderApplications);
+
+  // ---------------------------------------------------------------
+  // File de relabellisation
+  // ---------------------------------------------------------------
+  function renderReviewQueue(items) {
+    var container = document.getElementById("review-cards");
+
+    if (!items.length) {
+      container.innerHTML = '<div class="empty">Aucun email ambigu en ce moment. Tout est classifié avec confiance.</div>';
+      return;
+    }
+
+    container.innerHTML = items.map(function (e) {
+      var buttons = LABELS.map(function (l) {
+        return '<button data-id="' + e.id + '" data-label="' + l + '">' + l + "</button>";
+      }).join("");
+
+      return '<div class="card" id="review-card-' + e.id + '">' +
+        '<div class="meta">' +
+          '<span class="from">' + escapeHtml(e.sender || e.recipient || "") + "</span>" +
+          '<span class="conf">conf. ' + fmtConfidence(e.confidence) + "</span>" +
+        "</div>" +
+        '<div class="subject">' + escapeHtml(e.subject || "(sans sujet)") + "</div>" +
+        '<div class="snippet" id="snippet-' + e.id + '">chargement du corps…</div>' +
+        '<div class="row-actions" style="margin-top:8px">' +
+          '<button class="view-email-btn" data-email-id="' + e.id + '">Voir l\'email complet</button>' +
+          gmailLinkHtml(e.gmail_id) +
+        "</div>" +
+        '<div class="actions">' + buttons + "</div>" +
+      "</div>";
+    }).join("");
+
+    container.querySelectorAll(".view-email-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showSingleEmail(btn.dataset.emailId);
+      });
+    });
+
+    items.forEach(function (e) {
+      api("/emails/" + e.id).then(function (full) {
+        var el = document.getElementById("snippet-" + e.id);
+        if (el) el.textContent = (full.body || "").trim().slice(0, 500) || "(corps vide)";
+      }).catch(function () {});
+    });
+
+    container.querySelectorAll("button[data-label]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.dataset.id;
+        var label = btn.dataset.label;
+        var card = document.getElementById("review-card-" + id);
+        card.querySelectorAll("button").forEach(function (b) { b.disabled = true; });
+
+        fetch(getApiUrl() + "/emails/" + id + "/label", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: label }),
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            card.classList.add("done");
+            card.querySelector(".snippet").textContent = "Enregistré comme " + label + ".";
+            setStatus("Email #" + id + " labellisé " + label + ". Pensez à relancer le trainer.");
+          })
+          .catch(function (err) {
+            setStatus("Échec de la labellisation #" + id + " : " + err.message, true);
+            card.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
+          });
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Tous les emails
+  // ---------------------------------------------------------------
+  var allEmails = [];
+
+  function renderEmails() {
+    var dir = document.getElementById("email-direction-filter").value;
+    var cls = document.getElementById("email-class-filter").value;
+    var rows = allEmails.filter(function (e) {
+      return (!dir || e.direction === dir) && (!cls || e.classification === cls);
+    });
+    var body = document.getElementById("emails-body");
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">Aucun email avec ces filtres.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(function (e) {
+      var who = e.direction === "SENT" ? e.recipient : e.sender;
+      return "<tr>" +
+        "<td>" + escapeHtml(e.subject || "(sans sujet)") + "</td>" +
+        "<td>" + escapeHtml(who || "—") + "</td>" +
+        '<td><span class="badge ' + (e.classification || "UNKNOWN") + '">' + (e.classification || "—") + "</span></td>" +
+        "<td>" + fmtConfidence(e.confidence) + "</td>" +
+        '<td><div class="row-actions">' +
+          '<button class="view-email-btn" data-email-id="' + e.id + '">Voir</button>' +
+          gmailLinkHtml(e.gmail_id) +
+        "</div></td>" +
+        "</tr>";
+    }).join("");
+
+    body.querySelectorAll(".view-email-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showSingleEmail(btn.dataset.emailId);
+      });
+    });
+  }
+
+  document.getElementById("email-direction-filter").addEventListener("change", renderEmails);
+  document.getElementById("email-class-filter").addEventListener("change", renderEmails);
+
+  // ---------------------------------------------------------------
+  // Chargement
+  // ---------------------------------------------------------------
+  function loadAll() {
+    setStatus("Chargement…");
+
+    Promise.all([
+      api("/stats"),
+      api("/applications"),
+      api("/emails?max_confidence=0.70&direction=RECEIVED&limit=100"),
+      api("/emails?limit=300"),
+    ]).then(function (results) {
+      var stats = results[0], applications = results[1], review = results[2], emails = results[3];
+
+      renderTiles(stats);
+
+      allApplications = applications;
+      renderApplications();
+
+      allEmails = emails;
+      renderEmails();
+
+      renderReviewQueue(review);
+
+      document.getElementById("count-applications").textContent = applications.length;
+      document.getElementById("count-review").textContent = review.length;
+      document.getElementById("count-emails").textContent = emails.length;
+
+      setStatus("À jour · " + new Date().toLocaleTimeString("fr-FR"));
+    }).catch(function (err) {
+      setStatus(
+        "Impossible de joindre l'API (" + getApiUrl() + "). " +
+        "Vérifiez qu'elle tourne et que CORS est activé. Détail : " + err.message,
+        true
+      );
+    });
+  }
+
+  loadAll();
+})();
+</script>
+</body>
+</html>
