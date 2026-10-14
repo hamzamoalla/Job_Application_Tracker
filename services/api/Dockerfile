@@ -5,7 +5,9 @@ WORKDIR /app
 COPY services/api/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY services/api/app.py /app/app.py
-COPY text_cleaning.py /app/text_cleaning.py
+COPY services/api/app /app/app
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONPATH=/app
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
