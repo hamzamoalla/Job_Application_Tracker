@@ -128,8 +128,34 @@ def maybe_reload_models() -> None:
         logger.info("Nouveaux modèles détectés et rechargés (hot-reload).")
 
 
+def human_confirmed_label(email: dict) -> tuple[str, float] | None:
+    """
+    Label API sets confidence=1.0 and processed=FALSE for human review.
+    On reprocess, trust that label — do NOT re-run the ML model.
+    """
+    conf = email.get("confidence")
+    label = email.get("classification")
+    if conf is None or not label:
+        return None
+    try:
+        if float(conf) >= 0.999:
+            return str(label), 1.0
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 def process_sent_email(conn, email: dict) -> None:
-    label, confidence = classification.classify_sent(email)
+    confirmed = human_confirmed_label(email)
+    if confirmed:
+        label, confidence = confirmed
+        logger.info(
+            "Email SENT id=%s: label humain conservé %s (conf=1.0)",
+            email["id"],
+            label,
+        )
+    else:
+        label, confidence = classification.classify_sent(email)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -242,7 +268,16 @@ def process_sent_email(conn, email: dict) -> None:
 
 
 def process_received_email(conn, email: dict) -> None:
-    label, confidence = classification.classify_received(email)
+    confirmed = human_confirmed_label(email)
+    if confirmed:
+        label, confidence = confirmed
+        logger.info(
+            "Email RECEIVED id=%s: label humain conservé %s (conf=1.0)",
+            email["id"],
+            label,
+        )
+    else:
+        label, confidence = classification.classify_received(email)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -391,7 +426,8 @@ def main() -> None:
                     cur.execute(
                         """
                         SELECT id, gmail_id, thread_id, direction,
-                               sender, recipient, subject, body, sent_at
+                               sender, recipient, subject, body, sent_at,
+                               classification, confidence
                         FROM emails
                         WHERE processed = FALSE
                         ORDER BY id ASC

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.config import ALLOWED_LABELS
 from app.db import conn
-from app.schemas import EmailIn, LabelIn
+from app.schemas import BatchIdsIn, EmailIn, LabelIn
 from app.text_cleaning import clean_for_storage, prepare_ml_text
 
 router = APIRouter(tags=["emails"])
@@ -55,6 +55,10 @@ def list_emails(
         description="Filtrer sur une classification précise (ex: IN_REVIEW).",
     ),
     direction: str | None = Query(None, description="SENT ou RECEIVED"),
+    include_dismissed: bool = Query(
+        False,
+        description="Si false (défaut), exclut les emails ignorés (review_dismissed).",
+    ),
     limit: int = Query(50, ge=1, le=500),
 ):
     clauses = ["processed = TRUE"]
@@ -63,6 +67,9 @@ def list_emails(
     if max_confidence is not None:
         clauses.append("confidence <= %s")
         params.append(max_confidence)
+        # File de review: ne pas réafficher les mails ignorés
+        if not include_dismissed:
+            clauses.append("COALESCE(review_dismissed, FALSE) = FALSE")
 
     if classification is not None:
         clauses.append("classification = %s")
@@ -137,13 +144,15 @@ def get_email(email_id: int):
 
 @router.post("/emails/{email_id}/label")
 def label_email(email_id: int, payload: LabelIn):
+    """Human label: conf=1.0, processed=FALSE, optional training row + history."""
     if payload.label not in ALLOWED_LABELS:
         raise HTTPException(400, f"Unknown label. Use one of {sorted(ALLOWED_LABELS)}")
 
     with conn() as c:
         row = c.execute(
             """
-            SELECT id, direction, body, subject FROM emails WHERE id=%s
+            SELECT id, direction, body, subject, classification, confidence
+            FROM emails WHERE id=%s
             """,
             (email_id,),
         ).fetchone()
@@ -151,6 +160,7 @@ def label_email(email_id: int, payload: LabelIn):
         if not row:
             raise HTTPException(404, "Email not found")
 
+        old_cls, old_conf = row[4], row[5]
         task = (
             "APPLICATION"
             if payload.label in {"JOB_APPLICATION", "OTHER"}
@@ -159,27 +169,213 @@ def label_email(email_id: int, payload: LabelIn):
 
         c.execute(
             """
-            UPDATE emails SET classification=%s, confidence=1.0
-            WHERE id=%s
+            UPDATE emails
+            SET classification = %s,
+                confidence = 1.0,
+                processed = FALSE,
+                review_dismissed = FALSE
+            WHERE id = %s
             """,
             (payload.label, email_id),
         )
 
-        training_text = prepare_ml_text(row[3], row[2])
+        added_to_training = False
+        if payload.add_to_training:
+            if payload.edited_text and payload.edited_text.strip():
+                training_text = payload.edited_text.strip()
+            else:
+                training_text = prepare_ml_text(row[3], row[2])
+            c.execute(
+                """
+                INSERT INTO training_examples(task, text, label)
+                VALUES (%s,%s,%s)
+                """,
+                (task, training_text, payload.label),
+            )
+            added_to_training = True
 
         c.execute(
             """
-            INSERT INTO training_examples(task, text, label)
-            VALUES (%s,%s,%s)
+            INSERT INTO review_history(
+                email_id, action,
+                old_classification, new_classification,
+                old_confidence, new_confidence,
+                add_to_training, details
+            )
+            VALUES (%s, 'LABEL', %s, %s, %s, 1.0, %s, %s::jsonb)
             """,
-            (task, training_text, payload.label),
+            (
+                email_id,
+                old_cls,
+                payload.label,
+                old_conf,
+                added_to_training,
+                '{"source":"dashboard"}',
+            ),
         )
 
+    return {
+        "status": "saved_for_training" if added_to_training else "classification_updated",
+        "label": payload.label,
+        "confidence": 1.0,
+        "processed": False,
+        "add_to_training": added_to_training,
+    }
+
+
+@router.post("/emails/{email_id}/dismiss")
+def dismiss_email(email_id: int):
+    """
+    Ignore for review queue: does NOT change classification or confidence.
+    Email will not reappear in À relabelliser.
+    """
+    with conn() as c:
+        row = c.execute(
+            """
+            SELECT id, classification, confidence, review_dismissed
+            FROM emails WHERE id = %s
+            """,
+            (email_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Email not found")
+
         c.execute(
             """
-            UPDATE emails SET processed = FALSE WHERE id = %s
+            UPDATE emails SET review_dismissed = TRUE WHERE id = %s
             """,
             (email_id,),
         )
+        c.execute(
+            """
+            INSERT INTO review_history(
+                email_id, action,
+                old_classification, new_classification,
+                old_confidence, new_confidence,
+                add_to_training, details
+            )
+            VALUES (%s, 'DISMISS', %s, %s, %s, %s, FALSE, %s::jsonb)
+            """,
+            (
+                email_id,
+                row[1],
+                row[1],
+                row[2],
+                row[2],
+                '{"source":"dashboard"}',
+            ),
+        )
+    return {"status": "dismissed", "email_id": email_id}
 
-    return {"status": "saved_for_training"}
+
+@router.post("/emails/{email_id}/undismiss")
+def undismiss_email(email_id: int):
+    """Re-open an ignored email so it appears again in the review queue."""
+    with conn() as c:
+        row = c.execute(
+            """
+            SELECT id, classification, confidence
+            FROM emails WHERE id = %s
+            """,
+            (email_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Email not found")
+
+        c.execute(
+            "UPDATE emails SET review_dismissed = FALSE WHERE id = %s",
+            (email_id,),
+        )
+        c.execute(
+            """
+            INSERT INTO review_history(
+                email_id, action,
+                old_classification, new_classification,
+                old_confidence, new_confidence,
+                add_to_training, details
+            )
+            VALUES (%s, 'UNDISMISS', %s, %s, %s, %s, FALSE, %s::jsonb)
+            """,
+            (email_id, row[1], row[1], row[2], row[2], '{"source":"dashboard"}'),
+        )
+    return {"status": "undismissed", "email_id": email_id}
+
+
+@router.post("/emails/batch-dismiss")
+def batch_dismiss(payload: BatchIdsIn):
+
+    results = []
+    with conn() as c:
+        for email_id in payload.ids:
+            row = c.execute(
+                """
+                SELECT id, classification, confidence FROM emails WHERE id = %s
+                """,
+                (email_id,),
+            ).fetchone()
+            if not row:
+                continue
+            c.execute(
+                "UPDATE emails SET review_dismissed = TRUE WHERE id = %s",
+                (email_id,),
+            )
+            c.execute(
+                """
+                INSERT INTO review_history(
+                    email_id, action,
+                    old_classification, new_classification,
+                    old_confidence, new_confidence,
+                    add_to_training, details
+                )
+                VALUES (%s, 'DISMISS', %s, %s, %s, %s, FALSE, %s::jsonb)
+                """,
+                (
+                    email_id,
+                    row[1],
+                    row[1],
+                    row[2],
+                    row[2],
+                    '{"source":"dashboard","batch":true}',
+                ),
+            )
+            results.append(email_id)
+    return {"status": "dismissed", "ids": results, "count": len(results)}
+
+
+@router.get("/review-history")
+def review_history(limit: int = Query(100, ge=1, le=500)):
+    with conn() as c:
+        rows = c.execute(
+            """
+            SELECT h.id, h.email_id, h.action,
+                   h.old_classification, h.new_classification,
+                   h.old_confidence, h.new_confidence,
+                   h.add_to_training, h.details, h.created_at,
+                   e.subject, e.sender, e.recipient, e.direction
+            FROM review_history h
+            JOIN emails e ON e.id = h.email_id
+            ORDER BY h.created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "email_id": r[1],
+            "action": r[2],
+            "old_classification": r[3],
+            "new_classification": r[4],
+            "old_confidence": r[5],
+            "new_confidence": r[6],
+            "add_to_training": r[7],
+            "details": r[8],
+            "created_at": r[9],
+            "subject": r[10],
+            "sender": r[11],
+            "recipient": r[12],
+            "direction": r[13],
+        }
+        for r in rows
+    ]

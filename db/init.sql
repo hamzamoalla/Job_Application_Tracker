@@ -15,12 +15,17 @@ CREATE TABLE IF NOT EXISTS emails (
     processed BOOLEAN NOT NULL DEFAULT FALSE,
     classification TEXT,
     confidence DOUBLE PRECISION,
+    -- Ignorer un email dans la file de relabellisation (sans changer label/confiance)
+    review_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails(thread_id);
 CREATE INDEX IF NOT EXISTS idx_emails_processed ON emails(processed);
 CREATE INDEX IF NOT EXISTS idx_emails_sent_at ON emails(sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_emails_review_dismissed
+    ON emails (review_dismissed)
+    WHERE review_dismissed = TRUE;
 
 
 CREATE TABLE IF NOT EXISTS applications (
@@ -58,16 +63,24 @@ CREATE TABLE IF NOT EXISTS processing_events (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ============================================================
--- 2. DONNÉES D'ENTRAÎNEMENT
--- ============================================================
--- Ancien bloc INSERT supprimé : la base training_examples n'est plus
--- seedée ici. Pour la peupler avec les exemples propres, après le premier
--- démarrage du conteneur postgres :
---
---   docker exec -i job_application_tracker-postgres-1 \
---       psql -U jobtracker -d jobtracker -f /training_data/reset_training_examples.sql
---
--- Source de vérité unique : db/training_examples/training_examples.csv
--- (le script SQL ne fait que TRUNCATE + charger ce CSV — pour ajouter ou
--- corriger un exemple, on édite uniquement le CSV, jamais de SQL).
+
+-- Historique des actions manuelles (dashboard : LABEL, DISMISS, UNDISMISS)
+CREATE TABLE IF NOT EXISTS review_history (
+    id                   BIGSERIAL PRIMARY KEY,
+    email_id             BIGINT NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+    action               TEXT NOT NULL,
+    -- LABEL | DISMISS | UNDISMISS
+    old_classification   TEXT,
+    new_classification   TEXT,
+    old_confidence       DOUBLE PRECISION,
+    new_confidence       DOUBLE PRECISION,
+    add_to_training      BOOLEAN NOT NULL DEFAULT FALSE,
+    details              JSONB,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_history_created
+    ON review_history (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_review_history_email
+    ON review_history (email_id);
