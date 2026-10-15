@@ -4,7 +4,6 @@ WORKDIR /app
 
 COPY services/trainer/requirements.txt /tmp/requirements.txt
 
-# Un seul RUN : torch CPU → deps → re-force torch CPU → purge nvidia/cuda → clean cache
 RUN pip install --no-cache-dir \
         torch==2.4.1 \
         --index-url https://download.pytorch.org/whl/cpu \
@@ -23,5 +22,6 @@ ENV PYTHONPATH=/app
 ENV MODEL_DIR=/app/models
 ENV SENTENCE_TRANSFORMERS_HOME=/app/st_cache
 ENV HF_HOME=/app/hf_cache
+ENV MLFLOW_TRACKING_URI=http://mlflow:5000
 
 CMD ["python", "-m", "train.train"]

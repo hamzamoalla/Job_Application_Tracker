@@ -28,6 +28,56 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
+
+  mlflow-db-init:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: jobtracker
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        psql -h postgres -U jobtracker -d jobtracker -tc \
+          "SELECT 1 FROM pg_database WHERE datname='mlflow'" | grep -q 1 \
+        || psql -h postgres -U jobtracker -d jobtracker -c 'CREATE DATABASE mlflow;'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.2
+    command:
+      - /bin/bash
+      - -c
+      - |
+        pip install --quiet psycopg2-binary &&
+        mlflow server \
+          --host 0.0.0.0 \
+          --port 5000 \
+          --backend-store-uri postgresql://jobtracker:jobtracker@postgres:5432/mlflow \
+          --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+
   api:
     build:
       context: .
@@ -41,24 +91,22 @@ services:
         condition: service_healthy
     volumes:
       - models_data:/app/models
- 
+
   classifier-worker:
     build:
       context: .
       dockerfile: services/classifier-worker/Dockerfile
     environment:
       DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
-      POLL_SECONDS: 15
-      MIN_CONFIDENCE: 0.80
-      REVIEW_CONFIDENCE_THRESHOLD: 0.70
+      MODEL_DIR: /app/models
+      POLL_INTERVAL: "15"
+      MIN_CONFIDENCE: "0.80"
+      REVIEW_CONFIDENCE_THRESHOLD: "0.70"
       SENTENCE_TRANSFORMERS_HOME: /app/st_cache
       HF_HOME: /app/hf_cache
-      # Repli NER (GLiNER) pour l'extraction entreprise/poste quand les
-      # regex échouent. Mettre à "false" pour le désactiver sans
-      # modifier le code (ex. ressources limitées, modèle non voulu).
       ENABLE_GLINER_FALLBACK: "true"
       GLINER_MODEL_NAME: urchade/gliner_multi-v2.1
-      GLINER_THRESHOLD: 0.4
+      GLINER_THRESHOLD: "0.4"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,27 +114,38 @@ services:
       - models_data:/app/models
       - st_cache:/app/st_cache
       - hf_cache:/app/hf_cache
- 
+
   trainer:
     build:
       context: .
       dockerfile: services/trainer/Dockerfile
     environment:
       DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
+      MODEL_DIR: /app/models
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: jobtracker-classification
+      EMBEDDING_MODEL_NAME: paraphrase-multilingual-MiniLM-L12-v2
       SENTENCE_TRANSFORMERS_HOME: /app/st_cache
+      HF_HOME: /app/hf_cache
+      LOG_LEVEL: INFO
+      MIN_F1_TO_PUBLISH: "0.80"
+      MAX_F1_REGRESSION: "0.03"
     volumes:
       - models_data:/app/models
       - st_cache:/app/st_cache
- 
+      - hf_cache:/app/hf_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    profiles:
+      - train
+
 volumes:
   postgres_data:
   models_data:
   pgadmin_data:
-  # Cache local du modèle d'embedding sentence-transformers (~470 Mo).
-  # Partagé entre trainer et classifier-worker pour n'être téléchargé
-  # qu'une seule fois, au lieu d'être re-téléchargé à chaque conteneur
-  # reconstruit ou redémarré.
+  mlflow_artifacts:
   st_cache:
-  # Cache local du modèle GLiNER (~350 Mo), utilisé uniquement par
-  # classifier-worker (repli NER pour l'extraction entreprise/poste).
   hf_cache:
