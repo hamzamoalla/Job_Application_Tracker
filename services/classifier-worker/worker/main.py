@@ -3,6 +3,7 @@ Classifier worker – polls unprocessed emails, classifies them and
 updates applications.
 
 Models are loaded via joblib from MODEL_DIR (/app/models).
+Joblib files are hot-reloaded when their mtime changes (no restart needed).
 """
 
 from __future__ import annotations
@@ -44,26 +45,66 @@ MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.80"))
 ENABLE_GLINER = os.getenv("ENABLE_GLINER_FALLBACK", "true").lower() in ("1", "true", "yes")
 
 
-def load_models() -> None:
+# Tracks mtime of joblib files to hot-reload without container restart
+_model_mtimes: dict[str, float] = {}
+
+
+def _file_mtime(path: str) -> float | None:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def load_sklearn_models(force: bool = False) -> bool:
+    """
+    Load application/reply joblib models.
+    If force=False, only reload when file mtime changed.
+    Returns True if at least one model was (re)loaded.
+    """
     import joblib
 
     model_dir = os.getenv("MODEL_DIR", "/app/models")
-    app_path = os.path.join(model_dir, "application_model.joblib")
-    reply_path = os.path.join(model_dir, "reply_model.joblib")
+    paths = {
+        "application": os.path.join(model_dir, "application_model.joblib"),
+        "reply": os.path.join(model_dir, "reply_model.joblib"),
+    }
+    reloaded = False
 
-    if os.path.exists(app_path):
-        classification.application_model = joblib.load(app_path)
-        logger.info("Modèle chargé : application_model (%s)", app_path)
-    else:
-        logger.warning("Modèle de candidature introuvable : %s", app_path)
-        classification.application_model = None
+    for key, path in paths.items():
+        mtime = _file_mtime(path)
+        prev = _model_mtimes.get(key)
+        if not force and mtime is not None and prev is not None and mtime == prev:
+            continue
 
-    if os.path.exists(reply_path):
-        classification.reply_model = joblib.load(reply_path)
-        logger.info("Modèle chargé : reply_model (%s)", reply_path)
-    else:
-        logger.warning("Modèle de réponse introuvable : %s", reply_path)
-        classification.reply_model = None
+        if mtime is None:
+            if key == "application":
+                classification.application_model = None
+            else:
+                classification.reply_model = None
+            _model_mtimes.pop(key, None)
+            if force:
+                logger.warning("Modèle introuvable : %s", path)
+            continue
+
+        try:
+            model = joblib.load(path)
+            if key == "application":
+                classification.application_model = model
+            else:
+                classification.reply_model = model
+            _model_mtimes[key] = mtime
+            reloaded = True
+            logger.info("Modèle chargé : %s (%s)", key + "_model", path)
+        except Exception:
+            logger.exception("Échec chargement %s", path)
+
+    return reloaded
+
+
+def load_models() -> None:
+    """Initial load: sklearn models + optional GLiNER."""
+    load_sklearn_models(force=True)
 
     if ENABLE_GLINER:
         try:
@@ -79,6 +120,12 @@ def load_models() -> None:
     else:
         logger.info("GLiNER désactivé (ENABLE_GLINER_FALLBACK=false).")
         extraction.gliner_model = None
+
+
+def maybe_reload_models() -> None:
+    """Called each poll loop – hot-reload joblib if trainer published new files."""
+    if load_sklearn_models(force=False):
+        logger.info("Nouveaux modèles détectés et rechargés (hot-reload).")
 
 
 def process_sent_email(conn, email: dict) -> None:
@@ -334,6 +381,7 @@ def main() -> None:
 
     while True:
         try:
+            maybe_reload_models()
             with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
                 with conn.transaction():
                     expire_stale_applications(conn)
