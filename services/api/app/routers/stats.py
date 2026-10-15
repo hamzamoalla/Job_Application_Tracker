@@ -18,7 +18,10 @@ def stats():
         needs_review = c.execute(
             """
             SELECT COUNT(*) FROM emails
-            WHERE processed = TRUE AND confidence IS NOT NULL AND confidence < 0.70
+            WHERE processed = TRUE
+              AND confidence IS NOT NULL
+              AND confidence < 0.70
+              AND COALESCE(review_dismissed, FALSE) = FALSE
             """
         ).fetchone()[0]
         statuses = c.execute(

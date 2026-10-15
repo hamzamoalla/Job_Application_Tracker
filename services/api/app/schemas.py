@@ -21,3 +21,15 @@ class LabelIn(BaseModel):
         ...,
         description="One of: JOB_APPLICATION, OTHER, REJECTION, INTERVIEW, IN_REVIEW",
     )
+    add_to_training: bool = Field(
+        False,
+        description="If true, insert into training_examples.",
+    )
+    edited_text: str | None = Field(
+        None,
+        description="Optional cleaned text for training when add_to_training=true.",
+    )
+
+
+class BatchIdsIn(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=200)
