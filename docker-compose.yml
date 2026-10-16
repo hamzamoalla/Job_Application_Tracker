@@ -83,6 +83,7 @@ services:
       context: .
       dockerfile: services/api/Dockerfile
     environment:
+      MAIL_IMPORTER_URL: http://mail-importer:8000
       DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
     ports:
       - "8000:8000"
@@ -100,7 +101,7 @@ services:
       DATABASE_URL: postgresql://jobtracker:jobtracker@postgres:5432/jobtracker
       MODEL_DIR: /app/models
       POLL_INTERVAL: "15"
-      MIN_CONFIDENCE: "0.80"
+      MIN_CONFIDENCE: "0.70"
       REVIEW_CONFIDENCE_THRESHOLD: "0.70"
       SENTENCE_TRANSFORMERS_HOME: /app/st_cache
       HF_HOME: /app/hf_cache
@@ -131,6 +132,10 @@ services:
     environment:
       API_URL: http://api:8000/emails
       AUTH_DIR: /app/auth
+      REQUEST_TIMEOUT: "60"
+      POLL_INTERVAL: "60"
+      POLL_MAX_RECEIVED: "20"
+      POLL_MAX_SENT: "20"
     ports:
       - "8081:8000"
     volumes:

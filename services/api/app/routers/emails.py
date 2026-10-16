@@ -18,8 +18,8 @@ def insert_email(email: EmailIn):
         row = c.execute(
             """
             INSERT INTO emails
-            (gmail_id, thread_id, direction, sender, recipient, subject, body, sent_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            (gmail_id, thread_id, direction, sender, recipient, subject, body, sent_at, processed)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s, FALSE)
             ON CONFLICT (gmail_id) DO UPDATE SET
                 thread_id=EXCLUDED.thread_id,
                 direction=EXCLUDED.direction,
@@ -27,8 +27,9 @@ def insert_email(email: EmailIn):
                 recipient=EXCLUDED.recipient,
                 subject=EXCLUDED.subject,
                 body=EXCLUDED.body,
-                sent_at=EXCLUDED.sent_at
-            RETURNING id, gmail_id
+                sent_at=EXCLUDED.sent_at,
+                processed=FALSE
+            RETURNING id, gmail_id, (xmax = 0) AS inserted
             """,
             (
                 email.gmail_id,
@@ -41,7 +42,13 @@ def insert_email(email: EmailIn):
                 email.sent_at,
             ),
         ).fetchone()
-    return {"id": row[0], "gmail_id": row[1]}
+    inserted = bool(row[2])
+    return {
+        "id": row[0],
+        "gmail_id": row[1],
+        "status": "created" if inserted else "reprocessed",
+        "reprocessed": not inserted,
+    }
 
 
 @router.get("/emails")

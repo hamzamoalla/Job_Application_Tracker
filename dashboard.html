@@ -1267,9 +1267,122 @@
   }
   .filters select { display: none !important; }
 
+
+  #auth-gate {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    background-image: var(--bg-mesh);
+    padding: 24px;
+  }
+  #auth-gate[hidden] { display: none !important; }
+  .auth-card {
+    width: 100%; max-width: 440px;
+    background: var(--surface-glass);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px 26px;
+    box-shadow: var(--shadow-lg);
+  }
+  .auth-card h1 { margin: 0 0 6px; font-size: 1.35rem; font-weight: 800; }
+  .auth-card .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .auth-card label {
+    display: block; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-muted); margin: 12px 0 6px;
+  }
+  .auth-card input[type="text"],
+  .auth-card input[type="email"],
+  .auth-card input[type="password"],
+  .auth-card input[type="number"],
+  .auth-card input[type="file"] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 500 14px var(--display);
+  }
+  .auth-card input:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .auth-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .auth-card .auth-error {
+    margin-top: 12px; color: var(--bad); font-size: 13px; font-weight: 600;
+  }
+  .auth-card .auth-ok {
+    margin-top: 12px; color: var(--ok); font-size: 13px;
+  }
+  .auth-card .auth-actions { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .auth-card .auth-actions button { flex: 1; }
+  .auth-hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; }
+  #app-shell[hidden] { display: none !important; }
+
 </style>
 </head>
 <body>
+<div id="auth-gate">
+  <div class="auth-card">
+    <h1 id="auth-title">Connexion</h1>
+    <p class="sub" id="auth-sub">Accédez à Job Tracker</p>
+
+    <div id="auth-login-form">
+      <label>Email</label>
+      <input type="email" id="login-email" autocomplete="username" />
+      <label>Mot de passe</label>
+      <input type="password" id="login-password" autocomplete="current-password" />
+      <div class="auth-actions">
+        <button type="button" class="primary" id="login-btn">Se connecter</button>
+      </div>
+    </div>
+
+    <div id="auth-register-form" hidden>
+      <div class="auth-row">
+        <div>
+          <label>Prénom</label>
+          <input type="text" id="reg-first-name" />
+        </div>
+        <div>
+          <label>Nom</label>
+          <input type="text" id="reg-last-name" />
+        </div>
+      </div>
+      <label>Email</label>
+      <input type="email" id="reg-email" autocomplete="email" />
+      <label>Société actuelle</label>
+      <input type="text" id="reg-company" />
+      <div class="auth-row">
+        <div>
+          <label>Mails reçus (import)</label>
+          <input type="number" id="reg-max-received" min="0" max="500" value="50" />
+        </div>
+        <div>
+          <label>Mails envoyés (import)</label>
+          <input type="number" id="reg-max-sent" min="0" max="500" value="50" />
+        </div>
+      </div>
+      <label>token.json (Gmail)</label>
+      <input type="file" id="reg-token-file" accept=".json,application/json" />
+      <p class="auth-hint">Générez token.json une fois hors Docker (OAuth navigateur), puis uploadez-le ici pour le premier import.</p>
+      <label>Mot de passe</label>
+      <input type="password" id="reg-password" autocomplete="new-password" />
+      <label>Confirmer le mot de passe</label>
+      <input type="password" id="reg-password2" autocomplete="new-password" />
+      <div class="auth-actions">
+        <button type="button" class="primary" id="register-btn">Créer le compte &amp; importer</button>
+      </div>
+    </div>
+
+    <div class="auth-error" id="auth-error" hidden></div>
+    <div class="auth-ok" id="auth-ok" hidden></div>
+  </div>
+</div>
+
+<div id="app-shell" hidden>
+
 <div class="wrap">
 
   <header class="top">
@@ -1497,6 +1610,60 @@
 (function () {
   "use strict";
 
+  var SESSION_KEY = "jobtracker_session";
+  var authGate = document.getElementById("auth-gate");
+  var appShell = document.getElementById("app-shell");
+
+  function getSessionToken() {
+    try { return localStorage.getItem(SESSION_KEY) || ""; } catch (e) { return ""; }
+  }
+  function setSessionToken(t) {
+    try {
+      if (t) localStorage.setItem(SESSION_KEY, t);
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (e) {}
+  }
+  function authHeaders() {
+    var t = getSessionToken();
+    var h = { "Accept": "application/json" };
+    if (t) h["Authorization"] = "Bearer " + t;
+    return h;
+  }
+  function showAuthError(msg) {
+    var el = document.getElementById("auth-error");
+    var ok = document.getElementById("auth-ok");
+    ok.hidden = true;
+    el.hidden = !msg;
+    el.textContent = msg || "";
+  }
+  function showAuthOk(msg) {
+    var el = document.getElementById("auth-ok");
+    var err = document.getElementById("auth-error");
+    err.hidden = true;
+    el.hidden = !msg;
+    el.textContent = msg || "";
+  }
+  function enterApp() {
+    if (authGate) authGate.hidden = true;
+    if (appShell) appShell.hidden = false;
+    if (typeof loadAll === "function") loadAll();
+  }
+  function showAuth(firstSetup) {
+    if (authGate) authGate.hidden = false;
+    if (appShell) appShell.hidden = true;
+    document.getElementById("auth-login-form").hidden = !!firstSetup;
+    document.getElementById("auth-register-form").hidden = !firstSetup;
+    document.getElementById("auth-title").textContent = firstSetup ? "Configuration initiale" : "Connexion";
+    document.getElementById("auth-sub").textContent = firstSetup
+      ? "Créez votre compte, importez Gmail (token.json), puis accédez au tableau de bord."
+      : "Email et mot de passe";
+  }
+
+  // Patch api() to send Bearer — replace existing api function later via hook
+  var _origFetchApi = null;
+
+
+
   var LABELS = ["IN_REVIEW", "REJECTION", "INTERVIEW", "OTHER", "JOB_APPLICATION"];
 
   // ---------------------------------------------------------------
@@ -1552,8 +1719,13 @@
 
   function api(path) {
     var base = getApiUrl();
-    return fetch(base + path, { headers: { "Accept": "application/json" } })
+    return fetch(base + path, { headers: authHeaders() })
       .then(function (r) {
+        if (r.status === 401) {
+          setSessionToken("");
+          showAuth(false);
+          throw new Error("Session expirée — reconnectez-vous");
+        }
         if (!r.ok) throw new Error(path + " -> HTTP " + r.status);
         return r.json();
       });
@@ -1592,19 +1764,41 @@
   // Helper pour nettoyer automatiquement un texte d'email pour le dataset
   function cleanTextForTraining(rawText) {
     if (!rawText) return "";
-    var cleaned = rawText
-      // Enlever balises HTML éventuelles
-      .replace(/<[^>]*>/g, " ")
-      // Enlever signatures courantes et formules de fin
-      .replace(/(Cordialement|Bien cordialement|Best regards|Regards|Merci|Bonne journée)[\s\S]*/i, "")
-      // Supprimer liens URLs
-      .replace(/https?:\/\/\S+/gi, "")
-      // Normaliser les espaces et sauts de ligne multiples
-      .replace(/\r\n/g, "\n")
-      .replace(/\n\s*\n/g, "\n")
-      .replace(/[ \t]+/g, " ")
-      .trim();
-    return cleaned;
+    var text = String(rawText);
+
+    // HTML → espaces
+    text = text.replace(/<[^>]*>/g, " ");
+
+    // Bloc "References" / "Visible links" et tout ce qui suit
+    text = text.replace(/\n\s*References\b[\s\S]*$/i, "");
+    text = text.replace(/\n\s*Visible links\b[\s\S]*$/i, "");
+
+    // Lignes qui ne sont que des URLs ou "1. https://..."
+    text = text.split("\n").filter(function (line) {
+      var t = line.trim();
+      if (!t) return true;
+      if (/^https?:\/\/\S+$/i.test(t)) return false;
+      if (/^\d+\.\s*https?:\/\/\S+$/i.test(t)) return false;
+      if (/^(mailto:|www\.)\S+$/i.test(t)) return false;
+      return true;
+    }).join("\n");
+
+    // URLs restantes dans le texte
+    text = text.replace(/https?:\/\/\S+/gi, "");
+
+    // Signatures de fin UNIQUEMENT en début de ligne (ne pas toucher "Merci pour...")
+    text = text.replace(
+      /\n\s*(Cordialement|Bien cordialement|Best regards|Kind regards|Regards|Sincerely|À bientôt)\s*[,!]?\s*[\s\S]*$/i,
+      "\n"
+    );
+    // "Merci" seul sur une ligne (signature), pas "Merci pour votre candidature"
+    text = text.replace(/\n\s*Merci\s*[,.]?\s*(\n|$)/gi, "\n");
+
+    // Espaces
+    text = text.replace(/\r\n/g, "\n");
+    text = text.replace(/[ \t]+/g, " ");
+    text = text.replace(/\n{3,}/g, "\n\n");
+    return text.trim();
   }
 
   // ---------------------------------------------------------------
@@ -2461,9 +2655,112 @@
     });
   }
 
-  loadAll();
+  
+  document.getElementById("login-btn").addEventListener("click", function () {
+    showAuthError("");
+    var email = document.getElementById("login-email").value.trim();
+    var password = document.getElementById("login-password").value;
+    if (!email || !password) { showAuthError("Email et mot de passe requis."); return; }
+    fetch(getApiUrl() + "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ email: email, password: password }),
+    })
+      .then(function (r) {
+        return r.json().then(function (d) {
+          if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+          return d;
+        });
+      })
+      .then(function (d) {
+        setSessionToken(d.session_token);
+        enterApp();
+      })
+      .catch(function (err) {
+        showAuthError(err.message || "Échec de connexion");
+      });
+  });
+
+  document.getElementById("register-btn").addEventListener("click", function () {
+    showAuthError("");
+    showAuthOk("");
+    var password = document.getElementById("reg-password").value;
+    var password2 = document.getElementById("reg-password2").value;
+    if (password.length < 6) { showAuthError("Mot de passe : 6 caractères minimum."); return; }
+    if (password !== password2) { showAuthError("Les mots de passe ne correspondent pas."); return; }
+    var fd = new FormData();
+    fd.append("email", document.getElementById("reg-email").value.trim());
+    fd.append("password", password);
+    fd.append("first_name", document.getElementById("reg-first-name").value.trim());
+    fd.append("last_name", document.getElementById("reg-last-name").value.trim());
+    fd.append("company", document.getElementById("reg-company").value.trim());
+    fd.append("max_received", document.getElementById("reg-max-received").value || "50");
+    fd.append("max_sent", document.getElementById("reg-max-sent").value || "50");
+    var fileInput = document.getElementById("reg-token-file");
+    if (fileInput.files && fileInput.files[0]) {
+      fd.append("token_file", fileInput.files[0], "token.json");
+    }
+    var btn = document.getElementById("register-btn");
+    btn.disabled = true;
+    btn.textContent = "Création…";
+    fetch(getApiUrl() + "/auth/register", { method: "POST", body: fd })
+      .then(function (r) {
+        return r.json().then(function (d) {
+          if (!r.ok) {
+            var detail = d.detail;
+            if (Array.isArray(detail)) detail = detail.map(function (x) { return x.msg || x; }).join(", ");
+            throw new Error(detail || ("HTTP " + r.status));
+          }
+          return d;
+        });
+      })
+      .then(function (d) {
+        setSessionToken(d.session_token);
+        if (d.import && d.import.error) {
+          showAuthOk("Compte créé. Import Gmail : " + d.import.error + " — vous pouvez continuer.");
+        } else if (d.import) {
+          showAuthOk("Compte créé. Import Gmail lancé.");
+        }
+        setTimeout(enterApp, 600);
+      })
+      .catch(function (err) {
+        showAuthError(err.message || "Échec de l'inscription");
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = "Créer le compte & importer";
+      });
+  });
+
+  function bootstrapAuth() {
+    var token = getSessionToken();
+    if (token) {
+      fetch(getApiUrl() + "/auth/me", { headers: authHeaders() })
+        .then(function (r) {
+          if (!r.ok) throw new Error("no session");
+          return r.json();
+        })
+        .then(function () { enterApp(); })
+        .catch(function () {
+          setSessionToken("");
+          return fetch(getApiUrl() + "/auth/bootstrap")
+            .then(function (r) { return r.json(); })
+            .then(function (d) { showAuth(!!d.first_setup); })
+            .catch(function () { showAuth(false); });
+        });
+      return;
+    }
+    fetch(getApiUrl() + "/auth/bootstrap")
+      .then(function (r) { return r.json(); })
+      .then(function (d) { showAuth(!!d.first_setup); })
+      .catch(function () { showAuth(false); });
+  }
+
+  bootstrapAuth();
 })();
 </script>
 
+
+</div>
 </body>
 </html>
