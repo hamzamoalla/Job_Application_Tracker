@@ -1276,6 +1276,21 @@
     padding: 24px;
   }
   #auth-gate[hidden] { display: none !important; }
+  .auth-welcome { text-align: center; }
+  .auth-welcome h1 { font-size: 1.6rem; margin-bottom: 8px; }
+  .auth-welcome .sub { margin-bottom: 28px; }
+  .auth-welcome .welcome-actions {
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .auth-welcome .welcome-actions button {
+    width: 100%; padding: 14px 18px; font-size: 15px;
+  }
+  .auth-back {
+    background: transparent; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 13px; margin-bottom: 12px; padding: 0;
+  }
+  .auth-back:hover { color: var(--accent); }
+
   .auth-card {
     width: 100%; max-width: 440px;
     background: var(--surface-glass);
@@ -1326,10 +1341,20 @@
 <body>
 <div id="auth-gate">
   <div class="auth-card">
-    <h1 id="auth-title">Connexion</h1>
-    <p class="sub" id="auth-sub">Accédez à Job Tracker</p>
+    <div id="auth-welcome" class="auth-welcome">
+      <h1>Job Tracker</h1>
+      <p class="sub">Suivez vos candidatures, classifiez vos emails et entraînez vos modèles.</p>
+      <div class="welcome-actions">
+        <button type="button" class="primary" id="welcome-signin-btn">Se connecter</button>
+        <button type="button" class="secondary-action" id="welcome-signup-btn">Créer un compte</button>
+      </div>
+    </div>
 
-    <div id="auth-login-form">
+    <button type="button" class="auth-back" id="auth-back-btn" hidden>← Retour</button>
+    <h1 id="auth-title" hidden>Connexion</h1>
+    <p class="sub" id="auth-sub" hidden>Accédez à Job Tracker</p>
+
+    <div id="auth-login-form" hidden>
       <label>Email</label>
       <input type="email" id="login-email" autocomplete="username" />
       <label>Mot de passe</label>
@@ -1465,8 +1490,8 @@
           <tr>
             <th class="sortable" data-sort="company">Entreprise <span class="sort-icon">↕</span></th>
             <th class="sortable" data-sort="position">Poste <span class="sort-icon">↕</span></th>
-            <th>Statut</th>
-            <th>Source</th>
+            <th class="sortable" data-sort="status">Statut <span class="sort-icon">↕</span></th>
+            <th class="sortable" data-sort="source">Source <span class="sort-icon">↕</span></th>
             <th class="sortable active-sort" data-sort="date">Dernier e-mail <span class="sort-icon">▼</span></th>
             <th>Actions</th>
           </tr>
@@ -1479,7 +1504,7 @@
   <!-- Panel: À relabelliser (REVIEW - REPENSÉ) -->
   <section class="panel" id="panel-review">
     <div class="review-header-info">
-      <strong>File de qualification :</strong> confiance &lt; 70%. Choisissez le label ; optionnellement l'entraînement.
+      <strong>File de qualification :</strong> confiance &lt; 70% (reçus <strong>et</strong> envoyés). Choisissez le label ; optionnellement l'entraînement.
       <strong>✕</strong> ignore le mail (ni classification ni confiance modifiées) — il ne réapparaît plus ici.
     </div>
     <div class="review-bulk-bar">
@@ -1545,10 +1570,11 @@
       <table>
         <thead>
           <tr>
-            <th>Sujet</th>
-            <th>De / À</th>
-            <th>Classification</th>
-            <th>Confiance</th>
+            <th class="sortable" data-email-sort="subject">Sujet <span class="sort-icon">↕</span></th>
+            <th class="sortable" data-email-sort="who">De / À <span class="sort-icon">↕</span></th>
+            <th class="sortable" data-email-sort="classification">Classification <span class="sort-icon">↕</span></th>
+            <th class="sortable" data-email-sort="confidence">Confiance <span class="sort-icon">↕</span></th>
+            <th class="sortable" data-email-sort="date">Date <span class="sort-icon">↕</span></th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1604,17 +1630,6 @@
     <button type="button" id="tools-history-btn">
       Historique <span class="tools-count" id="tools-count-history">0</span>
     </button>
-    <button type="button" id="tools-import-btn">Importer des emails</button>
-  </div>
-  <div id="import-menu" hidden style="position:fixed;top:80px;right:20px;z-index:55;min-width:260px;padding:16px;border-radius:14px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-lg)">
-    <div style="font-weight:700;margin-bottom:10px">Import Gmail</div>
-    <label style="font-size:12px;color:var(--text-muted)">Reçus</label>
-    <input type="number" id="import-max-received" min="0" max="500" value="50" style="width:100%;margin:4px 0 10px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text)"/>
-    <label style="font-size:12px;color:var(--text-muted)">Envoyés</label>
-    <input type="number" id="import-max-sent" min="0" max="500" value="50" style="width:100%;margin:4px 0 10px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text)"/>
-    <p style="font-size:11px;color:var(--text-dim);margin:0 0 10px">Doublons non créés — processed=false pour retraitement.</p>
-    <button type="button" class="primary" id="import-run-btn" style="width:100%">Lancer l'import</button>
-    <div id="import-msg" style="font-size:12px;margin-top:8px;color:var(--text-muted)"></div>
   </div>
 
 <script>
@@ -1622,6 +1637,74 @@
   "use strict";
 
   var SESSION_KEY = "jobtracker_session";
+
+  var UI_STATE_KEY = "jobtracker_ui_state";
+
+  function saveUiState() {
+    try {
+      var activePanel = "applications";
+      document.querySelectorAll("nav.tabs button").forEach(function (b) {
+        if (b.classList.contains("active") && b.dataset.panel) activePanel = b.dataset.panel;
+      });
+      // also check visible panels
+      document.querySelectorAll(".panel.active").forEach(function (p) {
+        if (p.id && p.id.indexOf("panel-") === 0) activePanel = p.id.replace("panel-", "");
+      });
+      var st = {
+        panel: activePanel,
+        activeAppFilter: typeof activeAppFilter !== "undefined" ? activeAppFilter : "all",
+        appStatus: (document.getElementById("app-status-filter") || {}).value || "",
+        appSearch: (document.getElementById("app-search") || {}).value || "",
+        emailDir: (document.getElementById("email-direction-filter") || {}).value || "",
+        emailCls: (document.getElementById("email-class-filter") || {}).value || "",
+        emailSearch: (document.getElementById("email-search") || {}).value || "",
+        sortField: typeof currentSortField !== "undefined" ? currentSortField : "date",
+        sortOrder: typeof currentSortOrder !== "undefined" ? currentSortOrder : "desc",
+        emailSortField: typeof emailSortField !== "undefined" ? emailSortField : "date",
+        emailSortOrder: typeof emailSortOrder !== "undefined" ? emailSortOrder : "desc",
+      };
+      localStorage.setItem(UI_STATE_KEY, JSON.stringify(st));
+    } catch (e) {}
+  }
+
+  function loadUiState() {
+    try {
+      return JSON.parse(localStorage.getItem(UI_STATE_KEY) || "null");
+    } catch (e) { return null; }
+  }
+
+  function applyUiState(st) {
+    if (!st) return;
+    if (st.activeAppFilter) activeAppFilter = st.activeAppFilter;
+    if (st.sortField) currentSortField = st.sortField;
+    if (st.sortOrder) currentSortOrder = st.sortOrder;
+    if (st.emailSortField) emailSortField = st.emailSortField;
+    if (st.emailSortOrder) emailSortOrder = st.emailSortOrder;
+    var appSt = document.getElementById("app-status-filter");
+    var appSe = document.getElementById("app-search");
+    var emDir = document.getElementById("email-direction-filter");
+    var emCls = document.getElementById("email-class-filter");
+    var emSe = document.getElementById("email-search");
+    if (appSt && st.appStatus != null) appSt.value = st.appStatus;
+    if (appSe && st.appSearch != null) appSe.value = st.appSearch;
+    if (emDir && st.emailDir != null) emDir.value = st.emailDir;
+    if (emCls && st.emailCls != null) emCls.value = st.emailCls;
+    if (emSe && st.emailSearch != null) emSe.value = st.emailSearch;
+    if (st.panel) {
+      document.querySelectorAll("nav.tabs button").forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+      var tab = document.querySelector('nav.tabs button[data-panel="' + st.panel + '"]');
+      var panel = document.getElementById("panel-" + st.panel);
+      if (tab) tab.classList.add("active");
+      if (panel) panel.classList.add("active");
+      // tools panels review/history
+      if (!panel && (st.panel === "review" || st.panel === "history")) {
+        panel = document.getElementById("panel-" + st.panel);
+        if (panel) panel.classList.add("active");
+      }
+    }
+  }
+
   var authGate = document.getElementById("auth-gate");
   var appShell = document.getElementById("app-shell");
 
@@ -1662,13 +1745,46 @@
   function showAuth(firstSetup) {
     if (authGate) authGate.hidden = false;
     if (appShell) appShell.hidden = true;
-    document.getElementById("auth-login-form").hidden = !!firstSetup;
-    document.getElementById("auth-register-form").hidden = !firstSetup;
-    document.getElementById("auth-title").textContent = firstSetup ? "Configuration initiale" : "Connexion";
-    document.getElementById("auth-sub").textContent = firstSetup
-      ? "Créez votre compte, importez Gmail (token.json), puis accédez au tableau de bord."
-      : "Email et mot de passe";
+    var welcome = document.getElementById("auth-welcome");
+    var back = document.getElementById("auth-back-btn");
+    var title = document.getElementById("auth-title");
+    var sub = document.getElementById("auth-sub");
+    document.getElementById("auth-login-form").hidden = true;
+    document.getElementById("auth-register-form").hidden = true;
+    if (welcome) welcome.hidden = false;
+    if (back) back.hidden = true;
+    if (title) title.hidden = true;
+    if (sub) sub.hidden = true;
+    window.__authFirstSetup = !!firstSetup;
+    // Hide signup button if users already exist
+    var signupBtn = document.getElementById("welcome-signup-btn");
+    if (signupBtn) signupBtn.hidden = !firstSetup && window.__usersExist;
   }
+
+  function showLoginForm() {
+    var welcome = document.getElementById("auth-welcome");
+    if (welcome) welcome.hidden = true;
+    document.getElementById("auth-back-btn").hidden = false;
+    document.getElementById("auth-title").hidden = false;
+    document.getElementById("auth-sub").hidden = false;
+    document.getElementById("auth-title").textContent = "Connexion";
+    document.getElementById("auth-sub").textContent = "Email et mot de passe";
+    document.getElementById("auth-login-form").hidden = false;
+    document.getElementById("auth-register-form").hidden = true;
+  }
+
+  function showRegisterForm() {
+    var welcome = document.getElementById("auth-welcome");
+    if (welcome) welcome.hidden = true;
+    document.getElementById("auth-back-btn").hidden = false;
+    document.getElementById("auth-title").hidden = false;
+    document.getElementById("auth-sub").hidden = false;
+    document.getElementById("auth-title").textContent = "Créer un compte";
+    document.getElementById("auth-sub").textContent = "Profil, import Gmail (token.json) et mot de passe.";
+    document.getElementById("auth-login-form").hidden = true;
+    document.getElementById("auth-register-form").hidden = false;
+  }
+
 
   // Patch api() to send Bearer — replace existing api function later via hook
   var _origFetchApi = null;
@@ -1775,19 +1891,41 @@
   // Helper pour nettoyer automatiquement un texte d'email pour le dataset
   function cleanTextForTraining(rawText) {
     if (!rawText) return "";
-    var cleaned = rawText
-      // Enlever balises HTML éventuelles
-      .replace(/<[^>]*>/g, " ")
-      // Enlever signatures courantes et formules de fin
-      .replace(/(Cordialement|Bien cordialement|Best regards|Regards|Merci|Bonne journée)[\s\S]*/i, "")
-      // Supprimer liens URLs
-      .replace(/https?:\/\/\S+/gi, "")
-      // Normaliser les espaces et sauts de ligne multiples
-      .replace(/\r\n/g, "\n")
-      .replace(/\n\s*\n/g, "\n")
-      .replace(/[ \t]+/g, " ")
-      .trim();
-    return cleaned;
+    var text = String(rawText);
+
+    // HTML → espaces
+    text = text.replace(/<[^>]*>/g, " ");
+
+    // Bloc "References" / "Visible links" et tout ce qui suit
+    text = text.replace(/\n\s*References\b[\s\S]*$/i, "");
+    text = text.replace(/\n\s*Visible links\b[\s\S]*$/i, "");
+
+    // Lignes qui ne sont que des URLs ou "1. https://..."
+    text = text.split("\n").filter(function (line) {
+      var t = line.trim();
+      if (!t) return true;
+      if (/^https?:\/\/\S+$/i.test(t)) return false;
+      if (/^\d+\.\s*https?:\/\/\S+$/i.test(t)) return false;
+      if (/^(mailto:|www\.)\S+$/i.test(t)) return false;
+      return true;
+    }).join("\n");
+
+    // URLs restantes dans le texte
+    text = text.replace(/https?:\/\/\S+/gi, "");
+
+    // Signatures de fin UNIQUEMENT en début de ligne (ne pas toucher "Merci pour...")
+    text = text.replace(
+      /\n\s*(Cordialement|Bien cordialement|Best regards|Kind regards|Regards|Sincerely|À bientôt)\s*[,!]?\s*[\s\S]*$/i,
+      "\n"
+    );
+    // "Merci" seul sur une ligne (signature), pas "Merci pour votre candidature"
+    text = text.replace(/\n\s*Merci\s*[,.]?\s*(\n|$)/gi, "\n");
+
+    // Espaces
+    text = text.replace(/\r\n/g, "\n");
+    text = text.replace(/[ \t]+/g, " ");
+    text = text.replace(/\n{3,}/g, "\n\n");
+    return text.trim();
   }
 
   // ---------------------------------------------------------------
@@ -1869,7 +2007,9 @@
       tabButtons.forEach(function (b) { b.classList.remove("active"); });
       document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
       btn.classList.add("active");
-      document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+      var panel = document.getElementById("panel-" + btn.dataset.panel);
+      if (panel) panel.classList.add("active");
+      saveUiState();
     });
   });
 
@@ -1938,6 +2078,8 @@
   var allApplications = [];
   var currentSortField = "date";
   var currentSortOrder = "desc";
+  var emailSortField = "date";
+  var emailSortOrder = "desc";
 
   function handleHeaderSort(field) {
     if (currentSortField === field) {
@@ -1948,6 +2090,7 @@
     }
     updateThIcons();
     renderApplications();
+    saveUiState();
   }
 
   function updateThIcons() {
@@ -2070,6 +2213,12 @@
       } else if (currentSortField === "position") {
         valA = (a.position || "").toLowerCase();
         valB = (b.position || "").toLowerCase();
+      } else if (currentSortField === "status") {
+        valA = (a.status || "").toLowerCase();
+        valB = (b.status || "").toLowerCase();
+      } else if (currentSortField === "source") {
+        valA = (a.source || "").toLowerCase();
+        valB = (b.source || "").toLowerCase();
       } else {
         valA = a.last_email_date || a.updated_at || a.application_date || "";
         valB = b.last_email_date || b.updated_at || b.application_date || "";
@@ -2125,7 +2274,9 @@
       else tile.classList.remove("active-filter");
     });
   });
-  document.getElementById("app-search").addEventListener("input", renderApplications);
+  document.getElementById("app-search").addEventListener("input", function () { renderApplications(); saveUiState(); });
+  // persist on status filter already handled below
+
 
   // ---------------------------------------------------------------
   // REVIEW QUEUE (Rubrique À Relabelliser - Version Moderne)
@@ -2339,9 +2490,33 @@
       var matchesSearch = !search ||
         (e.subject && e.subject.toLowerCase().indexOf(search) !== -1) ||
         (e.sender && e.sender.toLowerCase().indexOf(search) !== -1) ||
-        (e.recipient && e.recipient.toLowerCase().indexOf(search) !== -1);
+        (e.recipient && e.recipient.toLowerCase().indexOf(search) !== -1) ||
+        (e.classification && e.classification.toLowerCase().indexOf(search) !== -1);
 
       return matchesDir && matchesCls && matchesSearch;
+    });
+
+    rows.sort(function (a, b) {
+      var va = "", vb = "";
+      if (emailSortField === "subject") {
+        va = (a.subject || "").toLowerCase(); vb = (b.subject || "").toLowerCase();
+      } else if (emailSortField === "who") {
+        va = ((a.direction === "SENT" ? a.recipient : a.sender) || "").toLowerCase();
+        vb = ((b.direction === "SENT" ? b.recipient : b.sender) || "").toLowerCase();
+      } else if (emailSortField === "classification") {
+        va = (a.classification || "").toLowerCase(); vb = (b.classification || "").toLowerCase();
+      } else if (emailSortField === "confidence") {
+        va = a.confidence != null ? a.confidence : -1;
+        vb = b.confidence != null ? b.confidence : -1;
+        if (va < vb) return emailSortOrder === "asc" ? -1 : 1;
+        if (va > vb) return emailSortOrder === "asc" ? 1 : -1;
+        return 0;
+      } else {
+        va = a.sent_at || ""; vb = b.sent_at || "";
+      }
+      if (va < vb) return emailSortOrder === "asc" ? -1 : 1;
+      if (va > vb) return emailSortOrder === "asc" ? 1 : -1;
+      return 0;
     });
 
     var body = document.getElementById("emails-body");
@@ -2350,7 +2525,7 @@
     if (rc) rc.innerHTML = "<strong>" + rows.length + "</strong> résultat(s)";
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="5" class="empty">Aucun email ne correspond aux critères.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty">Aucun email ne correspond aux critères.</td></tr>';
       return;
     }
 
@@ -2361,6 +2536,7 @@
         "<td>" + escapeHtml(who || "—") + "</td>" +
         '<td><span class="badge ' + (e.classification || "UNKNOWN") + '">' + (e.classification || "—") + "</span></td>" +
         "<td>" + fmtConfidence(e.confidence) + "</td>" +
+        "<td>" + fmtDate(e.sent_at) + "</td>" +
         '<td><div class="row-actions">' +
           '<button class="view-email-btn" data-email-id="' + e.id + '">Voir</button>' +
           gmailLinkHtml(e.gmail_id) +
@@ -2375,9 +2551,24 @@
     });
   }
 
-  document.getElementById("email-direction-filter").addEventListener("change", renderEmails);
-  document.getElementById("email-class-filter").addEventListener("change", renderEmails);
-  document.getElementById("email-search").addEventListener("input", renderEmails);
+  
+  document.querySelectorAll("th[data-email-sort]").forEach(function (th) {
+    th.addEventListener("click", function () {
+      var field = th.dataset.emailSort;
+      if (emailSortField === field) {
+        emailSortOrder = emailSortOrder === "asc" ? "desc" : "asc";
+      } else {
+        emailSortField = field;
+        emailSortOrder = field === "date" || field === "confidence" ? "desc" : "asc";
+      }
+      renderEmails();
+      saveUiState();
+    });
+  });
+
+  document.getElementById("email-direction-filter").addEventListener("change", function(){ renderEmails(); saveUiState(); });
+  document.getElementById("email-class-filter").addEventListener("change", function(){ renderEmails(); saveUiState(); });
+  document.getElementById("email-search").addEventListener("input", function(){ renderEmails(); saveUiState(); });
 
   // ---------------------------------------------------------------
   // Boot & Load Data
@@ -2523,6 +2714,7 @@
       var panel = document.getElementById("panel-" + name);
       if (panel) panel.classList.add("active");
       menu.classList.remove("open");
+      if (typeof saveUiState === "function") saveUiState();
     }
     var rev = document.getElementById("tools-review-btn");
     var hist = document.getElementById("tools-history-btn");
@@ -2601,19 +2793,21 @@
     Promise.all([
       api("/stats"),
       api("/applications"),
-      api("/emails?max_confidence=0.70&direction=RECEIVED&limit=100"),
+      api("/emails?max_confidence=0.70&limit=150"),
       api("/emails?limit=300"),
     ]).then(function (results) {
       var stats = results[0], applications = results[1], review = results[2], emails = results[3];
 
       allApplications = applications;
+      allEmails = emails;
+      var st = loadUiState();
+      applyUiState(st);
       refreshAppFilterOptions();
+      refreshEmailFilterOptions();
       renderTiles(stats);
       renderApplications();
-
-      allEmails = emails;
-      refreshEmailFilterOptions();
       renderEmails();
+      saveUiState();
 
       initCombos();
       document.querySelectorAll(".combo").forEach(syncComboFromSelect);
@@ -2741,52 +2935,22 @@
     }
     fetch(getApiUrl() + "/auth/bootstrap")
       .then(function (r) { return r.json(); })
-      .then(function (d) { showAuth(!!d.first_setup); })
+      .then(function (d) {
+        window.__usersExist = !!d.users_exist;
+        showAuth(!!d.first_setup);
+      })
       .catch(function () { showAuth(false); });
   }
 
   
-  (function setupImportMenu() {
-    var btn = document.getElementById("tools-import-btn");
-    var menu = document.getElementById("import-menu");
-    var runBtn = document.getElementById("import-run-btn");
-    if (!btn || !menu || !runBtn) return;
-    btn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      var tools = document.getElementById("tools-menu");
-      if (tools) tools.classList.remove("open");
-      menu.hidden = !menu.hidden;
-    });
-    document.addEventListener("click", function () { menu.hidden = true; });
-    menu.addEventListener("click", function (e) { e.stopPropagation(); });
-    runBtn.addEventListener("click", function () {
-      var msg = document.getElementById("import-msg");
-      var maxR = Number(document.getElementById("import-max-received").value || 0);
-      var maxS = Number(document.getElementById("import-max-sent").value || 0);
-      msg.textContent = "Import en cours…";
-      runBtn.disabled = true;
-      var headers = { "Content-Type": "application/json", "Accept": "application/json" };
-      try {
-        var t = localStorage.getItem("jobtracker_session");
-        if (t) headers["Authorization"] = "Bearer " + t;
-      } catch (e) {}
-      fetch(getApiUrl() + "/import/run", {
-        method: "POST",
-        headers: headers,
-        body: JSON.stringify({ max_received: maxR, max_sent: maxS }),
-      })
-        .then(function (r) {
-          return r.json().then(function (d) {
-            if (!r.ok) throw new Error((d.detail && (d.detail.message || d.detail)) || ("HTTP " + r.status));
-            return d;
-          });
-        })
-        .then(function () {
-          msg.textContent = "Import démarré. Doublons → processed=false.";
-          setTimeout(function () { if (typeof loadAll === "function") loadAll(); }, 2500);
-        })
-        .catch(function (err) { msg.textContent = "Erreur : " + err.message; })
-        .finally(function () { runBtn.disabled = false; });
+  (function wireWelcome() {
+    var si = document.getElementById("welcome-signin-btn");
+    var su = document.getElementById("welcome-signup-btn");
+    var back = document.getElementById("auth-back-btn");
+    if (si) si.addEventListener("click", showLoginForm);
+    if (su) su.addEventListener("click", showRegisterForm);
+    if (back) back.addEventListener("click", function () {
+      showAuth(window.__authFirstSetup);
     });
   })();
 
