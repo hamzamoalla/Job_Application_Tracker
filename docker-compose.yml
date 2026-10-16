@@ -115,6 +115,29 @@ services:
       - st_cache:/app/st_cache
       - hf_cache:/app/hf_cache
 
+  frontend:
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  mail-importer:
+    build:
+      context: .
+      dockerfile: services/mail-importer/Dockerfile
+    environment:
+      API_URL: http://api:8000/emails
+      AUTH_DIR: /app/auth
+    ports:
+      - "8081:8000"
+    volumes:
+      - mail_auth_data:/app/auth
+    depends_on:
+      - api
+
   trainer:
     build:
       context: .
@@ -147,5 +170,7 @@ volumes:
   models_data:
   pgadmin_data:
   mlflow_artifacts:
+  # credentials.json + token.json uploaded through mail-importer's /auth/upload
+  mail_auth_data:
   st_cache:
   hf_cache:
