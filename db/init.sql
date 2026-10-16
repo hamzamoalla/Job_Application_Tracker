@@ -84,3 +84,23 @@ CREATE INDEX IF NOT EXISTS idx_review_history_created
 
 CREATE INDEX IF NOT EXISTS idx_review_history_email
     ON review_history (email_id);
+
+CREATE TABLE IF NOT EXISTS app_users (
+    id              BIGSERIAL PRIMARY KEY,
+    email           TEXT UNIQUE NOT NULL,
+    password_hash   TEXT NOT NULL,
+    first_name      TEXT NOT NULL DEFAULT '',
+    last_name       TEXT NOT NULL DEFAULT '',
+    company         TEXT NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS app_sessions (
+    token       TEXT PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_sessions_user ON app_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_app_sessions_expires ON app_sessions(expires_at);
