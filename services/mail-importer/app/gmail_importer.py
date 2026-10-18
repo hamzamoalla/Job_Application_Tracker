@@ -135,18 +135,133 @@ def html_to_text(html):
 
 
 def clean_body_text(text: str) -> str:
+    """
+    Nettoie le corps Gmail :
+    - invisibles / artefacts [1]
+    - preheader (snippet + …)
+    - blocs ATS/Odoo (Your Applicant, logo, Powered by Odoo)
+    - signatures URL isolées
+    - démarre au premier vrai salut (Dear / Bonjour / …)
+    """
     if not text:
         return ""
+
     text = re.sub(
-        r"[\u0000-\u0008\u000B\u000C\u000E-\u001F\u200b-\u200f\u202a-\u202e"
-        r"\u2060-\u2064\u2066-\u206f\ufeff\u00ad\u034f\u061c\u180e\u2000-\u200a]",
+        r"[\u0000-\u0008\u000B\u000C\u000E-\u001F"
+        r"\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f"
+        r"\ufeff\u00ad\u034f\u061c\u180e\u2000-\u200a]",
         "",
         text,
     )
+    text = text.replace("\xa0", " ")
+
     text = re.sub(r"\bNone\s*\[\d+\]", "", text)
     text = re.sub(r"\[\d+\]", "", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    # --- Preheader : première partie se terminant par … / [...] ---
+    # Cas multi-lignes
+    parts = re.split(r"\n{2,}", text)
+    if len(parts) >= 2:
+        p0 = parts[0].strip()
+        rest = "\n\n".join(parts[1:]).strip()
+
+        def norm(s: str) -> str:
+            return re.sub(r"\s+", " ", s).strip().lower()
+
+        has_ellipsis = bool(re.search(r"(\[\s*\.\.\.\s*\]|\.\.\.|\…)\s*$", p0))
+        p0_clean = re.sub(r"(\[\s*\.\.\.\s*\]|\.\.\.|\…|\*)\s*$", "", p0).strip()
+        p0_norm = norm(p0_clean)
+        rest_norm = norm(rest)
+
+        if p0_norm and len(p0_norm) < 450:
+            if has_ellipsis:
+                text = rest
+            elif rest_norm.startswith(p0_norm[:50]):
+                text = rest
+
+    # Preheader collapsé sur une ligne (ou quasi)
+    if re.search(r"(\[\s*\.\.\.\s*\]|\…|\.\.\.)", text[:350]):
+        m = re.search(r"(\[\s*\.\.\.\s*\]|\…|\.\.\.)\s*", text)
+        if m and m.start() < 350:
+            after = text[m.end():].strip()
+            if len(after) > 50:
+                text = after
+
+    # Double salutation collapsée : Dear … Dear …
+    if text.count("\n") <= 2 and len(text) > 120:
+        for start_tok in (
+            "Dear ", "Bonjour ", "Hello ", "Hi ", "Hallo ",
+            "Guten ", "Sehr geehrt", "Madame", "Monsieur",
+        ):
+            i = text.find(start_tok)
+            if i < 0:
+                continue
+            j = text.find(start_tok, i + len(start_tok))
+            if j > i + 20:
+                candidate = text[j:].strip()
+                if len(candidate) > 40:
+                    text = candidate
+                    break
+
+    # --- Bruit ATS / portails RH ---
+    noise_line = re.compile(
+        r"(?i)^("
+        r"your applicant\b.*"
+        r"|logo\b.*"
+        r"|powered by odoo\b.*"
+        r"|powered by recruitee\b.*"
+        r"|powered by greenhouse\b.*"
+        r"|view this email in your browser.*"
+        r"|si vous ne visualisez pas.*"
+        r")\s*$"
+    )
+    lines = []
+    for line in text.splitlines():
+        if noise_line.match(line.strip()):
+            continue
+        # ligne quasi vide "Your Applicant" suivi du nom seul déjà filtré
+        lines.append(line)
+    text = "\n".join(lines)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    # Bloc "Your Applicant\nName\nlogo" avant le vrai Dear
+    text = re.sub(
+        r"(?is)^(?:your applicant\s*\n+\s*[^\n]+\s*\n+(?:logo\s*\n+)?)+\s*",
+        "",
+        text,
+    ).strip()
+
+    # Démarrer au premier vrai salut si du bruit reste avant
+    salut = re.search(
+        r"(?im)^(Dear\s+\S|Bonjour\b|Hello\s+\S|Hi\s+\S|Hallo\b|"
+        r"Sehr geehrte|Guten Tag|Madame[, ]|Monsieur[, ])",
+        text,
+    )
+    if salut and salut.start() > 0 and salut.start() < 400:
+        # seulement si avant le salut c'est court / bruit
+        before = text[: salut.start()].strip()
+        if len(before) < 350 and not re.search(
+            r"(?i)unfortunately|regret|interview|candidature|application received",
+            before,
+        ):
+            text = text[salut.start() :].strip()
+
+    # Couper footers Odoo / Powered by en fin de message
+    text = re.sub(
+        r"(?is)\n+powered by (odoo|recruitee|greenhouse|personio).*$",
+        "",
+        text,
+    ).strip()
+    # Ligne isolée *company* + phones en fin (garder signature courte déjà dans le corps)
+    text = re.sub(
+        r"(?is)\n+\*much\.\s*Consulting[^\n]*\*.*$",
+        "",
+        text,
+    ).strip()
+
+    # URL isolées en bas
     lines = text.splitlines()
     while lines:
         last = lines[-1].strip()
@@ -155,9 +270,37 @@ def clean_body_text(text: str) -> str:
             continue
         if re.match(r"^(mailto:|https?://|www\.)\S+$", last, re.I):
             lines.pop()
+        elif re.match(r"(?i)^powered by\b", last):
+            lines.pop()
         else:
             break
-    return "\n".join(lines).strip()
+    text = "\n".join(lines).strip()
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
+def _score_body(text: str) -> float:
+    """Plus haut = corps mieux structuré."""
+    if not text:
+        return -1.0
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    n_lines = max(len(lines), 1)
+    line_bonus = min(n_lines, 40) * 3.0
+    penalty = 0.0
+    head = text[:250]
+    if re.search(r"(\.\.\.|\…|\[\s*\.\.\.\s*\])", head):
+        penalty += 25.0
+    if re.search(r"(?i)your applicant|powered by odoo", text):
+        penalty += 15.0
+    if n_lines == 1 and len(text) > 200:
+        penalty += 25.0
+    # bonus si commence par un salut
+    if re.match(
+        r"(?i)^(Dear |Bonjour|Hello |Hi |Hallo |Sehr |Guten |Madame|Monsieur)",
+        text,
+    ):
+        line_bonus += 10.0
+    return line_bonus + min(len(text), 2500) / 80.0 - penalty
 
 
 def collect_mime_bodies(part, plain_parts, html_parts):
@@ -176,15 +319,28 @@ def collect_mime_bodies(part, plain_parts, html_parts):
 
 
 def extract_body(payload):
+    """
+    Préfère le HTML si le text/plain est collapsé (preheader + une ligne),
+    sinon le plain nettoyé. Choisit la version au meilleur score.
+    """
     plain, html = [], []
     collect_mime_bodies(payload, plain, html)
-    plain_text = "\n".join(p.strip() for p in plain if p.strip())
-    if plain_text:
-        return clean_body_text(plain_text)
-    html_text = "\n".join(h for h in html if h.strip())
-    if html_text:
-        return clean_body_text(html_to_text(html_text))
-    return ""
+
+    plain_raw = "\n".join(p.strip() for p in plain if p.strip())
+    html_raw = "\n".join(h for h in html if h.strip())
+
+    candidates = []
+    if plain_raw:
+        candidates.append(clean_body_text(plain_raw))
+    if html_raw:
+        candidates.append(clean_body_text(html_to_text(html_raw)))
+
+    if not candidates:
+        return ""
+
+    best = max(candidates, key=_score_body)
+    return best
+
 
 
 def parse_date(date_string):
