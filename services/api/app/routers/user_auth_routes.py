@@ -31,6 +31,8 @@ class LoginIn(BaseModel):
 class ImportTriggerIn(BaseModel):
     max_sent: int = Field(50, ge=0, le=500)
     max_received: int = Field(50, ge=0, le=500)
+    # Dashboard re-import: force reclassification of already-stored emails
+    force_reprocess: bool = True
 
 
 def _user_public(row) -> dict:
@@ -74,7 +76,11 @@ def _bg_upload_and_import(token_bytes: bytes, max_sent: int, max_received: int) 
         r.raise_for_status()
         r2 = requests.post(
             f"{MAIL_IMPORTER_URL}/import",
-            json={"max_sent": max_sent, "max_received": max_received},
+            json={
+                "max_sent": max_sent,
+                "max_received": max_received,
+                "force_reprocess": False,
+            },
             timeout=30,
         )
         logger.info("Background import trigger: %s %s", r2.status_code, r2.text[:300])
@@ -180,7 +186,11 @@ def import_run(payload: ImportTriggerIn, user: dict = Depends(get_current_user))
     try:
         r = requests.post(
             f"{MAIL_IMPORTER_URL}/import",
-            json={"max_sent": payload.max_sent, "max_received": payload.max_received},
+            json={
+                "max_sent": payload.max_sent,
+                "max_received": payload.max_received,
+                "force_reprocess": payload.force_reprocess,
+            },
             timeout=30,
         )
         body = r.json() if r.content else {}

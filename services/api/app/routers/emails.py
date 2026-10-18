@@ -11,28 +11,86 @@ router = APIRouter(tags=["emails"])
 
 
 @router.post("/emails")
-def insert_email(email: EmailIn):
+def insert_email(
+    email: EmailIn,
+    force_reprocess: bool = Query(
+        False,
+        description="Si true, force processed=FALSE même si le mail existe déjà (re-import manuel).",
+    ),
+):
+    """
+    Insert un email.
+
+    - Nouveau gmail_id → insert, processed=FALSE (le worker le traitera).
+    - Déjà présent, contenu identique → **aucune modification** (évite la boucle
+      du poll continu qui re-traitait les mêmes mails chaque minute).
+    - Déjà présent, subject/body changés → update + processed=FALSE.
+    - force_reprocess=true → update + processed=FALSE systématique.
+    """
     subject, body = clean_for_storage(email.subject, email.body)
 
     with conn() as c:
-        row = c.execute(
+        existing = c.execute(
             """
-            INSERT INTO emails
-            (gmail_id, thread_id, direction, sender, recipient, subject, body, sent_at, processed)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s, FALSE)
-            ON CONFLICT (gmail_id) DO UPDATE SET
-                thread_id=EXCLUDED.thread_id,
-                direction=EXCLUDED.direction,
-                sender=EXCLUDED.sender,
-                recipient=EXCLUDED.recipient,
-                subject=EXCLUDED.subject,
-                body=EXCLUDED.body,
-                sent_at=EXCLUDED.sent_at,
-                processed=FALSE
-            RETURNING id, gmail_id, (xmax = 0) AS inserted
+            SELECT id, subject, body, processed
+            FROM emails WHERE gmail_id = %s
+            """,
+            (email.gmail_id,),
+        ).fetchone()
+
+        if existing is None:
+            row = c.execute(
+                """
+                INSERT INTO emails
+                (gmail_id, thread_id, direction, sender, recipient, subject, body, sent_at, processed)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s, FALSE)
+                RETURNING id, gmail_id
+                """,
+                (
+                    email.gmail_id,
+                    email.thread_id,
+                    email.direction,
+                    email.sender,
+                    email.recipient,
+                    subject,
+                    body,
+                    email.sent_at,
+                ),
+            ).fetchone()
+            return {
+                "id": row[0],
+                "gmail_id": row[1],
+                "status": "created",
+                "reprocessed": False,
+            }
+
+        eid, old_subject, old_body, old_processed = existing
+        content_changed = (old_subject or "") != (subject or "") or (old_body or "") != (body or "")
+
+        if not force_reprocess and not content_changed:
+            # Poll continu : mail déjà connu et inchangé → ne touche à rien
+            return {
+                "id": eid,
+                "gmail_id": email.gmail_id,
+                "status": "exists",
+                "reprocessed": False,
+            }
+
+        # Contenu changé ou re-import forcé
+        c.execute(
+            """
+            UPDATE emails SET
+                thread_id = %s,
+                direction = %s,
+                sender = %s,
+                recipient = %s,
+                subject = %s,
+                body = %s,
+                sent_at = %s,
+                processed = FALSE
+            WHERE id = %s
             """,
             (
-                email.gmail_id,
                 email.thread_id,
                 email.direction,
                 email.sender,
@@ -40,15 +98,16 @@ def insert_email(email: EmailIn):
                 subject,
                 body,
                 email.sent_at,
+                eid,
             ),
-        ).fetchone()
-    inserted = bool(row[2])
-    return {
-        "id": row[0],
-        "gmail_id": row[1],
-        "status": "created" if inserted else "reprocessed",
-        "reprocessed": not inserted,
-    }
+        )
+        return {
+            "id": eid,
+            "gmail_id": email.gmail_id,
+            "status": "reprocessed",
+            "reprocessed": True,
+            "reason": "forced" if force_reprocess else "content_changed",
+        }
 
 
 @router.get("/emails")
