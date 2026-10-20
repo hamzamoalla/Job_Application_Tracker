@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.config import ALLOWED_LABELS
 from app.db import conn
 from app.schemas import BatchIdsIn, EmailIn, LabelIn
-from app.text_cleaning import clean_for_storage, prepare_ml_text
+from app.text_cleaning import clean_for_storage, prepare_ml_text_full
 
 router = APIRouter(tags=["emails"])
 
@@ -227,11 +227,15 @@ def label_email(email_id: int, payload: LabelIn):
             raise HTTPException(404, "Email not found")
 
         old_cls, old_conf = row[4], row[5]
-        task = (
-            "APPLICATION"
-            if payload.label in {"JOB_APPLICATION", "OTHER"}
-            else "REPLY"
-        )
+        direction = row[1]
+        # task must mirror the classifier-worker's own routing
+        # (main.py: SENT -> classify_sent/application_model,
+        # RECEIVED -> classify_received/reply_model), NOT the label —
+        # OTHER exists under both models, so keying off the label alone
+        # sent RECEIVED emails labeled OTHER (e.g. newsletters) into the
+        # APPLICATION model's training set, which should only ever see
+        # text the user actually sent.
+        task = "APPLICATION" if direction == "SENT" else "REPLY"
 
         c.execute(
             """
@@ -247,16 +251,34 @@ def label_email(email_id: int, payload: LabelIn):
 
         added_to_training = False
         if payload.add_to_training:
-            if payload.edited_text and payload.edited_text.strip():
-                training_text = payload.edited_text.strip()
-            else:
-                training_text = prepare_ml_text(row[3], row[2])
+            subject = row[3] or ""
+            # edited_text replaces the BODY only. It goes through the same
+            # cleaning pipeline as everything else (clean_reply /
+            # strip_boilerplate / strip_urls) but WITHOUT truncation to
+            # MAX_BODY_CHARS: train.py now needs the FULL cleaned text for
+            # REPLY (chunk_word_60 + linear_svm_calibrated, see
+            # trainer/train/train.py build_reply_model) — storing an
+            # already-truncated body here would silently cap every future
+            # manually-corrected example at 600 characters and defeat the
+            # point of chunking. APPLICATION still truncates its own input
+            # via prepare_ml_text() at train/predict time, so storing the
+            # full body here doesn't change its behaviour (truncating an
+            # already-short sent email is a no-op).
+            body = payload.edited_text.strip() if payload.edited_text and payload.edited_text.strip() else row[2]
+            training_text = prepare_ml_text_full(subject, body)
+            # subject/text columns store the pre-wrap pieces; train.py
+            # rebuilds the same "Subject: ...\nBody: ..." string via
+            # prepare_ml_text()/prepare_ml_text_full() from these, so keep
+            # text as the cleaned body only — not the full wrapped
+            # training_text.
+            cleaned_body = training_text.split("\nBody: ", 1)[1] if "\nBody: " in training_text else training_text
             c.execute(
                 """
-                INSERT INTO training_examples(task, text, label)
-                VALUES (%s,%s,%s)
+                INSERT INTO training_examples(task, subject, text, label)
+                VALUES (%s,%s,%s,%s)
+                ON CONFLICT (task, label, subject, text) DO NOTHING
                 """,
-                (task, training_text, payload.label),
+                (task, subject.strip(), cleaned_body, payload.label),
             )
             added_to_training = True
 

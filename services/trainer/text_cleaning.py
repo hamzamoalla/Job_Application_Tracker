@@ -33,6 +33,7 @@ BOILERPLATE_LINE_PATTERNS = [
     r"(?i).*tous droits réservés.*$",
     r"(?i).*all rights reserved.*$",
     r"(?i)^this email was sent to.*$",
+    r"(?i)^this email was intended for.*$",
     r"(?i)^cet e-mail a été envoyé à.*$",
     r"(?i)^suivez-nous sur.*$",
     r"(?i)^follow us on.*$",
@@ -44,6 +45,29 @@ BOILERPLATE_LINE_PATTERNS = [
     r"(?i)^this message (?:is|contains) confidential.*$",
     r"(?i)^ce message (?:est|contient) confidentiel.*$",
 ]
+
+# URLs inline dans le corps (liens de tracking marketing surtout) : du bruit
+# pur pour l'embedding sémantique, et ça peut occuper une bonne partie du
+# budget MAX_BODY_CHARS avant même d'atteindre la phrase qui porte le
+# signal (voir prepare_ml_text). On ne les enlève PAS de clean_for_storage
+# : l'utilisateur peut avoir besoin de voir/cliquer ces liens dans le
+# dashboard (ex. lien de consentement RGPD).
+URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
+MAILTO_RE = re.compile(r"(?i)\bmailto:\S+")
+
+
+def strip_urls(text: str) -> str:
+    """Retire les URLs/mailto inline et nettoie les débris de ponctuation
+    qu'elles laissent (parenthèses ou crochets vides)."""
+    if not text:
+        return ""
+    text = URL_RE.sub("", text)
+    text = MAILTO_RE.sub("", text)
+    text = re.sub(r"\(\s*\)", "", text)
+    text = re.sub(r"\[\s*\]", "", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def normalize(value: str) -> str:
@@ -123,12 +147,44 @@ def truncate(text: str, max_chars: int = MAX_BODY_CHARS) -> str:
 def prepare_ml_text(subject: str | None, body: str | None) -> str:
     """
     Pipeline de nettoyage unique pour le ML (entraînement + prédiction).
-    Étapes : invisible chars → citations → boilerplate → truncate.
+    Étapes : invisible chars → citations → boilerplate → URLs → truncate.
+
+    strip_urls est APRÈS strip_boilerplate (les patterns de pied de page
+    matchent très bien même avec une URL derrière) et AVANT truncate : sans
+    ça, un email truffé de liens de tracking (newsletters marketing) gaspille
+    une bonne partie des MAX_BODY_CHARS sur du bruit avant même d'atteindre
+    la phrase qui porte le vrai signal (REJECTION/IN_REVIEW/INTERVIEW...).
     """
     body = remove_invisible_chars(body or "")
     cleaned_body = clean_reply(body)
     cleaned_body = strip_boilerplate(cleaned_body)
+    cleaned_body = strip_urls(cleaned_body)
     cleaned_body = truncate(cleaned_body, MAX_BODY_CHARS)
+
+    subject = (subject or "").strip()
+    return f"Subject: {subject}\nBody: {cleaned_body}".strip()
+
+
+def prepare_ml_text_full(subject: str | None, body: str | None) -> str:
+    """
+    Même pipeline de nettoyage que prepare_ml_text() (invisible chars →
+    citations → boilerplate → URLs) mais SANS la troncature finale à
+    MAX_BODY_CHARS.
+
+    Sert uniquement aux stratégies de découpage par chunks
+    (ml_embedding.ChunkPoolingEmbedder) : celles-ci ont besoin du texte
+    nettoyé en entier pour pouvoir embedder chaque chunk séparément — leur
+    passer un texte déjà tronqué à 600 caractères reviendrait à faire du
+    pooling sur un texte déjà amputé, ce qui annule l'intérêt du chunking.
+
+    N'est PAS utilisé par prepare_ml_text() ni par le worker en mode
+    "un seul vecteur" (SentenceEmbedder) : ceux-là gardent la troncature,
+    qui reste le comportement actuellement publié en production.
+    """
+    body = remove_invisible_chars(body or "")
+    cleaned_body = clean_reply(body)
+    cleaned_body = strip_boilerplate(cleaned_body)
+    cleaned_body = strip_urls(cleaned_body)
 
     subject = (subject or "").strip()
     return f"Subject: {subject}\nBody: {cleaned_body}".strip()
