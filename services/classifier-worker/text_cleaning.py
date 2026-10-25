@@ -33,6 +33,7 @@ BOILERPLATE_LINE_PATTERNS = [
     r"(?i).*tous droits réservés.*$",
     r"(?i).*all rights reserved.*$",
     r"(?i)^this email was sent to.*$",
+    r"(?i)^this email was intended for.*$",
     r"(?i)^cet e-mail a été envoyé à.*$",
     r"(?i)^suivez-nous sur.*$",
     r"(?i)^follow us on.*$",
@@ -43,7 +44,58 @@ BOILERPLATE_LINE_PATTERNS = [
     r"(?i)^confidentialité\s*[:\-].*$",
     r"(?i)^this message (?:is|contains) confidential.*$",
     r"(?i)^ce message (?:est|contient) confidentiel.*$",
+    # --- Footer / légal fréquent (FIS, corporate, etc.) ---
+    r"(?i)^kind regards,?$",
+    r"(?i)^best regards,?$",
+    r"(?i)^best regards\s*[,|].*$",
+    r"(?i)^kind regards\s*[,|].*$",
+    r"(?i)^cordialement,?$",
+    r"(?i)^bien cordialement,?$",
+    r"(?i)^sincerely,?$",
+    r"(?i)^sincerely yours,?$",
+    r"(?i).*proprietary and/or confidential.*",
+    r"(?i).*not the intended recipient.*",
+    r"(?i).*online privacy notice.*",
+    r"(?i).*this message is.*confidential.*",
+    r"(?i).*if you are not the intended recipient.*",
+    r"(?i).*delete the message and all copies.*",
+    r"(?i).*subject to archiving and review.*",
 ]
+
+# Signatures de fin de corps : on coupe APRÈS (on garde la ligne de politesse
+# si besoin, mais on drop tout le legal qui suit). Utilisé par
+# strip_trailing_signature_block.
+SIGNATURE_CUT_RE = re.compile(
+    r"(?im)^(?:"
+    r"kind\s+regards|best\s+regards|best\s+wishes|"
+    r"cordialement|bien\s+cordialement|sincerely(?:\s+yours)?|"
+    r"mit\s+freundlichen\s+gr[uü]ßen|viele\s+gr[uü]ße|beste\s+gr[uü]ße|"
+    r"warm\s+regards|thanks(?:\s+again)?|thank\s+you"
+    r")\s*,?\s*$"
+)
+
+# URLs inline dans le corps (liens de tracking marketing surtout) : du bruit
+# pur pour l'embedding sémantique, et ça peut occuper une bonne partie du
+# budget MAX_BODY_CHARS avant même d'atteindre la phrase qui porte le
+# signal (voir prepare_ml_text). On ne les enlève PAS de clean_for_storage
+# : l'utilisateur peut avoir besoin de voir/cliquer ces liens dans le
+# dashboard (ex. lien de consentement RGPD).
+URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
+MAILTO_RE = re.compile(r"(?i)\bmailto:\S+")
+
+
+def strip_urls(text: str) -> str:
+    """Retire les URLs/mailto inline et nettoie les débris de ponctuation
+    qu'elles laissent (parenthèses ou crochets vides)."""
+    if not text:
+        return ""
+    text = URL_RE.sub("", text)
+    text = MAILTO_RE.sub("", text)
+    text = re.sub(r"\(\s*\)", "", text)
+    text = re.sub(r"\[\s*\]", "", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def normalize(value: str) -> str:
@@ -114,21 +166,81 @@ def strip_boilerplate(text: str) -> str:
     return result.strip()
 
 
+def strip_trailing_signature_block(text: str) -> str:
+    """
+    Coupe le corps à partir de la DERNIÈRE signature type
+    « Kind regards » / « Best regards » / « Cordialement » si elle
+    apparaît dans la seconde moitié du texte.
+
+    Pourquoi la seconde moitié seulement : un mail court du type
+    « Best regards, Jean » en unique contenu ne doit pas être vidé.
+    Sur un mail long (FIS), la signature marque en pratique la fin
+    du signal utile ; tout ce qui suit est legal / privacy / confidential.
+    """
+    if not text or not text.strip():
+        return text or ""
+
+    lines = text.splitlines()
+    if len(lines) < 4:
+        # Trop court : risque de tout couper à tort
+        return text.strip()
+
+    # Positions (index de ligne) de toutes les signatures
+    sig_indices = [
+        i for i, line in enumerate(lines)
+        if SIGNATURE_CUT_RE.match(line.strip())
+    ]
+    if not sig_indices:
+        return text.strip()
+
+    last_sig = sig_indices[-1]
+    # Ne couper que si la signature est dans la 2e moitié du mail
+    if last_sig < len(lines) / 2:
+        return text.strip()
+
+    # On garde jusqu'à la ligne de signature incluse (politesse utile),
+    # on drop le bloc legal qui suit.
+    kept = lines[: last_sig + 1]
+    result = "\n".join(kept)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
+
+
 def truncate(text: str, max_chars: int = MAX_BODY_CHARS) -> str:
     if not text or len(text) <= max_chars:
         return text or ""
     return text[:max_chars].rstrip() + " […]"
 
 
+def _clean_body_common(body: str | None) -> str:
+    """Pipeline partagé : invisible → citations → boilerplate → signature → URLs."""
+    body = remove_invisible_chars(body or "")
+    cleaned = clean_reply(body)
+    cleaned = strip_boilerplate(cleaned)
+    cleaned = strip_trailing_signature_block(cleaned)
+    cleaned = strip_urls(cleaned)
+    return cleaned
+
+
 def prepare_ml_text(subject: str | None, body: str | None) -> str:
     """
     Pipeline de nettoyage unique pour le ML (entraînement + prédiction).
-    Étapes : invisible chars → citations → boilerplate → truncate.
+    Étapes : invisible chars → citations → boilerplate → signature block
+    → URLs → truncate.
     """
-    body = remove_invisible_chars(body or "")
-    cleaned_body = clean_reply(body)
-    cleaned_body = strip_boilerplate(cleaned_body)
+    cleaned_body = _clean_body_common(body)
     cleaned_body = truncate(cleaned_body, MAX_BODY_CHARS)
+
+    subject = (subject or "").strip()
+    return f"Subject: {subject}\nBody: {cleaned_body}".strip()
+
+
+def prepare_ml_text_full(subject: str | None, body: str | None) -> str:
+    """
+    Même pipeline que prepare_ml_text() mais SANS troncature à MAX_BODY_CHARS.
+    Pour ChunkPoolingEmbedder (texte complet).
+    """
+    cleaned_body = _clean_body_common(body)
 
     subject = (subject or "").strip()
     return f"Subject: {subject}\nBody: {cleaned_body}".strip()
@@ -143,7 +255,9 @@ def clean_for_storage(subject: str | None, body: str | None) -> tuple[str, str]:
     body = remove_invisible_chars(body or "")
     body = clean_reply(body)
     body = strip_boilerplate(body)
-    # On garde un peu plus de texte en base que pour le ML
+    # En storage on ne coupe PAS systématiquement après signature :
+    # l'utilisateur peut vouloir relire le footer dans le dashboard.
+    # On garde un peu plus de texte en base que pour le ML.
     body = truncate(body, max_chars=3000)
     return subject, body
 

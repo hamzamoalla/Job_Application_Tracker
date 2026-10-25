@@ -5,10 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from text_cleaning import prepare_ml_text
+from text_cleaning import prepare_ml_text, prepare_ml_text_full
 from worker.heuristics import heuristic_classification
 
+# Optionnel : réutiliser le même découpage que le modèle publié (chunk_sentence)
+from ml_embedding import split_sentences
+
 logger = logging.getLogger(__name__)
+
+# Seuil en dessous duquel on logge les chunks pour le debug / review
+LOW_CONFIDENCE_CHUNK_LOG = 0.70
 
 application_model: Any = None
 reply_model: Any = None
@@ -32,9 +38,44 @@ def model_predict(
         return "OTHER", 0.0
 
 
+def _log_chunks_if_low_confidence(
+    text: str, label: str, confidence: float, subject: str = ""
+) -> None:
+    """
+    Si confidence < 0.7, affiche tous les chunks (même découpage que
+    ChunkPoolingEmbedder strategy='sentence') pour comprendre pourquoi
+    le modèle hésite.
+    """
+    if confidence >= LOW_CONFIDENCE_CHUNK_LOG:
+        return
+
+    chunks = split_sentences(text) or [text.strip() or "(vide)"]
+    logger.info(
+        "LOW_CONF (%.3f) label=%s subject=%r — %d chunk(s):",
+        confidence,
+        label,
+        (subject or "")[:80],
+        len(chunks),
+    )
+    for i, chunk in enumerate(chunks, start=1):
+        # Tronquer un peu en log pour ne pas noyer les logs
+        preview = chunk if len(chunk) <= 300 else chunk[:300] + " […]"
+        logger.info("  chunk[%d/%d] (%d car.): %s", i, len(chunks), len(chunk), preview)
+
+
 def classify_sent(email: dict) -> tuple[str, float]:
     text = prepare_ml_text(email.get("subject"), email.get("body"))
-    return model_predict(application_model, text, model_name="application_model")
+    label, confidence = model_predict(application_model, text, model_name="application_model")
+    # APPLICATION = SentenceEmbedder (1 seul "chunk" = texte tronqué)
+    if confidence < LOW_CONFIDENCE_CHUNK_LOG:
+        logger.info(
+            "LOW_CONF APPLICATION (%.3f) label=%s subject=%r — texte (truncate): %s",
+            confidence,
+            label,
+            (email.get("subject") or "")[:80],
+            text[:400] + (" […]" if len(text) > 400 else ""),
+        )
+    return label, confidence
 
 
 def classify_received(email: dict) -> tuple[str, float]:
@@ -42,12 +83,17 @@ def classify_received(email: dict) -> tuple[str, float]:
     body = email.get("body") or ""
 
     rule_result = heuristic_classification(subject, body)
-    text = prepare_ml_text(subject, body)
+
+    # REPLY = chunk_sentence + linear_svm_calibrated → texte COMPLET
+    text = prepare_ml_text_full(subject, body)
     label, confidence = model_predict(reply_model, text, model_name="reply_model")
 
     allowed = {"INTERVIEW", "IN_REVIEW", "REJECTION", "OTHER"}
     if label not in allowed:
         label, confidence = "OTHER", confidence
+
+    # Debug : afficher tous les chunks si confiance basse
+    _log_chunks_if_low_confidence(text, label, confidence, subject=subject)
 
     if rule_result is None:
         return label, confidence

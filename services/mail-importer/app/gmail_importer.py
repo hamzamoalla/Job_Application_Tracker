@@ -456,6 +456,274 @@ def list_messages_after_ms(
     return out[:max_results]
 
 
+def list_messages_by_datetime(
+    service,
+    label_id: str,
+    day: str | None = None,
+    hour: int | None = None,
+    minute: int | None = None,
+    day_to: str | None = None,
+    max_results: int = POLL_MAX_PER_DIR,
+) -> list:
+    """
+    Messages entre day et day_to (YYYY-MM-DD, inclusifs, UTC), filtrés
+    optionnellement par heure / minute.
+
+    - day seul (= day_to)  → toute la journée
+    - day + day_to         → plage de dates inclusive
+    - + hour / minute      → filtre client sur internalDate (UTC)
+      (si plage multi-jours, hour/minute s'appliquent à chaque jour)
+    """
+    if max_results <= 0:
+        return []
+    if not day:
+        raise ValueError("day (YYYY-MM-DD) is required")
+    day_end = day_to or day
+    try:
+        y, m, d = (int(x) for x in day.split("-"))
+        y2, m2, d2 = (int(x) for x in day_end.split("-"))
+    except (ValueError, AttributeError) as exc:
+        raise ValueError(
+            f"day/day_to must be YYYY-MM-DD, got {day!r} / {day_to!r}"
+        ) from exc
+
+    from datetime import timedelta
+
+    day0 = datetime(y, m, d, tzinfo=timezone.utc)
+    day1_end = datetime(y2, m2, d2, tzinfo=timezone.utc) + timedelta(days=1)
+    if day1_end <= day0:
+        raise ValueError("day_to must be >= day")
+    q = (
+        f"after:{y}/{m:02d}/{d:02d} "
+        f"before:{day1_end.year}/{day1_end.month:02d}/{day1_end.day:02d}"
+    )
+
+    out, token = [], None
+    while len(out) < max_results:
+        remaining = max_results - len(out)
+        params = {
+            "userId": "me",
+            "labelIds": [label_id],
+            "q": q,
+            "maxResults": min(remaining, 100),
+        }
+        if token:
+            params["pageToken"] = token
+        resp = service.users().messages().list(**params).execute()
+        batch = resp.get("messages") or []
+        if not batch:
+            break
+        out.extend(batch)
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    out = out[:max_results]
+
+    if hour is None and minute is None:
+        return out
+
+    filtered = []
+    for msg in out:
+        try:
+            full = (
+                service.users()
+                .messages()
+                .get(userId="me", id=msg["id"], format="metadata")
+                .execute()
+            )
+        except HttpError:
+            continue
+        ms = int(full.get("internalDate") or 0)
+        if not ms:
+            continue
+        dt = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+        if hour is not None and dt.hour != int(hour):
+            continue
+        if minute is not None and dt.minute != int(minute):
+            continue
+        filtered.append(msg)
+    return filtered
+
+
+def _metadata_row(service, msg: dict, direction: str) -> dict | None:
+    """Sujet / from / date pour la prévisualisation (sans body)."""
+    mid = msg["id"] if isinstance(msg, dict) else msg
+    try:
+        full = (
+            service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=mid,
+                format="metadata",
+                metadataHeaders=["From", "To", "Subject", "Date"],
+            )
+            .execute()
+        )
+    except HttpError as exc:
+        if getattr(exc, "resp", None) is not None and exc.resp.status == 404:
+            return None
+        raise
+    labels = set(full.get("labelIds") or [])
+    if "TRASH" in labels or "SPAM" in labels:
+        return None
+    headers = full.get("payload", {}).get("headers", [])
+    internal_ms = int(full.get("internalDate") or 0)
+    sent_iso = None
+    if internal_ms:
+        sent_iso = datetime.fromtimestamp(
+            internal_ms / 1000.0, tz=timezone.utc
+        ).isoformat()
+    return {
+        "gmail_id": full["id"],
+        "thread_id": full.get("threadId"),
+        "direction": direction,
+        "subject": get_header(headers, "Subject") or "(sans sujet)",
+        "sender": get_header(headers, "From"),
+        "recipient": get_header(headers, "To"),
+        "sent_at": parse_date(get_header(headers, "Date")) or sent_iso,
+        "internal_ms": internal_ms,
+    }
+
+
+def preview_candidates(
+    direction: str,
+    *,
+    mode: str,
+    start: int | None = None,
+    end: int | None = None,
+    day: str | None = None,
+    day_to: str | None = None,
+    hour: int | None = None,
+    minute: int | None = None,
+) -> list[dict]:
+    """
+    Liste des candidats Gmail pour l'UI (sans importer).
+
+    mode=range    : indices 1-based (1 = plus récent), slice [start, end]
+    mode=datetime : day obligatoire ; day_to optionnel (fin de plage inclusive) ;
+                    hour / minute optionnels (UTC)
+    """
+    if direction not in LABEL_BY_DIRECTION:
+        raise ValueError(f"direction must be SENT or RECEIVED, got {direction!r}")
+    service = authenticate_gmail()
+    label = LABEL_BY_DIRECTION[direction]
+
+    if mode == "range":
+        start_i = max(1, int(start or 1))
+        end_i = max(start_i, int(end or start_i))
+        if end_i > 500:
+            end_i = 500
+        msgs = list_messages_by_label(service, label, end_i)
+        msgs = msgs[start_i - 1 : end_i]
+    elif mode == "datetime":
+        if not day:
+            raise ValueError("day (YYYY-MM-DD) is required for datetime mode")
+        if minute is not None and hour is None:
+            raise ValueError("hour is required when minute is set")
+        msgs = list_messages_by_datetime(
+            service, label, day, hour=hour, minute=minute, day_to=day_to
+        )
+    else:
+        raise ValueError(f"mode must be 'range' or 'datetime', got {mode!r}")
+
+    rows: list[dict] = []
+    for msg in msgs:
+        row = _metadata_row(service, msg, direction)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def run_import_ids(
+    gmail_ids: list[str],
+    direction: str,
+    *,
+    force_reprocess: bool = False,
+) -> dict:
+    """Importe uniquement les gmail_id sélectionnés dans le dashboard."""
+    if direction not in LABEL_BY_DIRECTION:
+        raise ValueError(f"direction must be SENT or RECEIVED, got {direction!r}")
+    if not gmail_ids:
+        return {
+            "mode": "selected_ids",
+            "direction": direction,
+            "created": 0,
+            "exists_unchanged": 0,
+            "reprocessed": 0,
+            "failed": 0,
+            "skipped": 0,
+            "requested": 0,
+        }
+    # dédoublonnage en conservant l'ordre
+    seen: set[str] = set()
+    unique_ids: list[str] = []
+    for gid in gmail_ids:
+        gid = (gid or "").strip()
+        if gid and gid not in seen:
+            seen.add(gid)
+            unique_ids.append(gid)
+
+    service = authenticate_gmail()
+    messages = [{"id": gid} for gid in unique_ids]
+    counters, _ = _process_message_list(
+        service,
+        messages,
+        direction,
+        force_reprocess=force_reprocess,
+        min_internal_ms=0,
+    )
+    counters.update(
+        {
+            "mode": "selected_ids",
+            "direction": direction,
+            "requested": len(unique_ids),
+        }
+    )
+    logger.info("Import by ids: %s", counters)
+    return counters
+
+
+def run_import_range(
+    direction: str,
+    start: int,
+    end: int,
+    *,
+    force_reprocess: bool = False,
+) -> dict:
+    """Importe directement la plage d'indices (sans preview)."""
+    rows = preview_candidates(
+        direction, mode="range", start=start, end=end
+    )
+    ids = [r["gmail_id"] for r in rows]
+    result = run_import_ids(ids, direction, force_reprocess=force_reprocess)
+    result["mode"] = "range"
+    result["start"] = start
+    result["end"] = end
+    return result
+
+
+
+
+def get_message_detail(gmail_id: str, direction: str | None = None) -> dict:
+    """Corps complet d'un message Gmail pour prévisualisation UI (sans import)."""
+    service = authenticate_gmail()
+    msg = {"id": gmail_id}
+    email = convert_message(service, msg, forced_direction=direction)
+    if email is None:
+        raise ValueError(f"Message {gmail_id!r} introuvable ou ignoré (spam/trash)")
+    return {
+        "gmail_id": email.get("gmail_id") or gmail_id,
+        "thread_id": email.get("thread_id"),
+        "direction": email.get("direction") or direction,
+        "subject": email.get("subject") or "(sans sujet)",
+        "sender": email.get("sender") or email.get("from"),
+        "recipient": email.get("recipient") or email.get("to"),
+        "sent_at": email.get("sent_at") or email.get("date"),
+        "body": email.get("body") or email.get("text") or "",
+        "snippet": (email.get("body") or email.get("text") or "")[:400],
+    }
+
 def send_email_to_api(email: dict, force_reprocess: bool = False) -> dict | None:
     payload = {k: v for k, v in email.items() if not k.startswith("_")}
     try:
