@@ -932,19 +932,20 @@
   .modal-overlay {
     position: fixed; 
     inset: 0; 
-    background: rgba(0, 0, 0, 0.7); 
-    backdrop-filter: blur(6px);
+    background: rgba(0, 0, 0, 0.75); 
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     z-index: 100;
     display: flex; 
     align-items: center; 
     justify-content: center;
     padding: 20px;
     opacity: 1;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .modal-overlay[hidden] { 
-    display: none; 
+    display: none !important; 
     opacity: 0;
   }
 
@@ -1336,6 +1337,256 @@
   .auth-hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; }
   #app-shell[hidden] { display: none !important; }
 
+
+  /* ---- Import Gmail Modal Modernisée ---- */
+  .import-card-container {
+    background: var(--surface-glass);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .imp-mode-tabs {
+    display: inline-flex;
+    background: var(--surface-2);
+    padding: 4px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    gap: 4px;
+    width: fit-content;
+  }
+
+  .imp-mode-tabs button {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    box-shadow: none;
+  }
+
+  .imp-mode-tabs button.active {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 700;
+    box-shadow: 0 2px 8px var(--accent-glow);
+  }
+
+  .imp-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+  }
+
+  .imp-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .imp-fields input,
+  .imp-fields select {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 9px 12px;
+    min-width: 120px;
+  }
+
+  .imp-fields input:focus,
+  .imp-fields select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  .imp-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .imp-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .imp-checkbox-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
+  #imp-preview-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Cartes d'aperçu d'emails améliorées */
+  #imp-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 340px;
+    overflow-y: auto;
+    margin-top: 10px;
+    padding-right: 4px;
+  }
+
+  .imp-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .imp-card:hover {
+    border-color: var(--border-hover);
+    background: var(--surface-hover);
+  }
+
+  .imp-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .imp-card-header input[type="checkbox"] {
+    margin-top: 3px;
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
+  .imp-card-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 13.5px;
+    color: var(--text);
+  }
+
+  .imp-card-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .imp-card-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+  }
+
+  .imp-card-body {
+    display: none;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .imp-card-body.open {
+    display: block;
+  }
+
+  .toggle-body-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--accent);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    align-self: flex-start;
+  }
+
+  .toggle-body-btn:hover {
+    background: var(--accent-glow);
+    border-color: var(--accent);
+  }
+
+
+  /* Mail detail popup (above import modal) */
+  .modal-overlay.mail-detail-overlay {
+    z-index: 120;
+    background: rgba(2, 6, 18, 0.72);
+  }
+  .modal-overlay.mail-detail-overlay .modal {
+    max-width: 720px;
+    width: min(720px, 96vw);
+    max-height: 90vh;
+  }
+  .mail-detail-meta {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .mail-detail-body {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    max-height: 55vh;
+    overflow: auto;
+  }
+  .imp-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+
 </style>
 </head>
 <body>
@@ -1583,7 +1834,88 @@
     </div>
   </section>
 
-  <!-- Modal Overlay -->
+  <!-- Modal Overlay (Gmail Import PopUp Modernisée) -->
+  <div class="modal-overlay" id="modal-import-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-import-title">
+      <div class="modal-head">
+        <h2 id="modal-import-title">📥 Importer depuis Gmail</h2>
+        <button class="modal-close" id="modal-import-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="import-card-container">
+          <p class="imp-hint">
+            💡 1) Prévisualisez → 2) Cochez vos e-mails → 3) Lancez l'importation.
+            <em>Les heures et minutes s'expriment en UTC. N° 1 = e-mail le plus récent.</em>
+          </p>
+
+          <div class="imp-fields">
+            <label>Direction
+              <select id="imp-direction">
+                <option value="RECEIVED">📥 Reçus (INBOX)</option>
+                <option value="SENT">📤 Envoyés</option>
+              </select>
+            </label>
+
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">Mode de sélection</span>
+              <div class="imp-mode-tabs">
+                <button type="button" data-imp-mode="range" class="active">Par numéro</button>
+                <button type="button" data-imp-mode="datetime">Par date</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section Numéro -->
+          <div id="imp-range-fields" class="imp-fields">
+            <label>Du n°
+              <input type="number" id="imp-start" min="1" max="500" value="1">
+            </label>
+            <label>Au n°
+              <input type="number" id="imp-end" min="1" max="500" value="20">
+            </label>
+          </div>
+          <p id="imp-range-hint" class="imp-hint">Ex. 1→20 = les 20 plus récents. 10→30 = e-mails classés 10 à 30.</p>
+
+          <!-- Section Date (Cachée par défaut avec style direct) -->
+                    <div id="imp-datetime-fields" class="imp-fields" style="display: none;">
+            <label>Du
+              <input type="date" id="imp-day-from">
+            </label>
+            <label>Au
+              <input type="date" id="imp-day-to">
+            </label>
+            <label>Heure UTC (opt.)
+              <input type="number" id="imp-hour" min="0" max="23" placeholder="—">
+            </label>
+            <label>Minute UTC (opt.)
+              <input type="number" id="imp-minute" min="0" max="59" placeholder="—">
+            </label>
+          </div>
+          <p id="imp-datetime-hint" class="imp-hint" style="display: none;">
+            Dates par défaut = aujourd'hui. Plage inclusive (Du → Au). +heure/+minute (UTC) filtrent dans la plage (heure obligatoire si minute renseignée).
+          </p>
+
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content: space-between; padding-top: 4px;">
+            <button type="button" class="primary" id="imp-preview-btn">🔍 Prévisualiser</button>
+            <label class="imp-checkbox-label">
+              <input type="checkbox" id="imp-force-reprocess"> Forcer le retraitement (reprocess)
+            </label>
+          </div>
+
+          <div id="imp-preview-toolbar" hidden>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button type="button" class="secondary-action" id="imp-select-all" style="font-size:12px; padding:6px 12px;">Tout cocher</button>
+              <button type="button" class="secondary-action" id="imp-select-none" style="font-size:12px; padding:6px 12px;">Tout décocher</button>
+            </div>
+            <span class="result-count" id="imp-preview-count"><strong>0</strong> mail(s)</span>
+            <button type="button" class="primary" id="imp-run-btn" disabled style="margin-left:auto;">⚡ Importer la sélection</button>
+          </div>
+          <div id="imp-preview-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <section class="panel" id="panel-history">
     <div class="review-header-info">
       Historique des actions manuelles (LABEL, DISMISS). <strong>Rouvrir</strong> remet un email ignoré dans la file.
@@ -1619,7 +1951,22 @@
 
 
   <!-- Review / Historique (coin haut droit) -->
-  <button type="button" class="tools-fab" id="tools-fab" title="Review & historique">
+  
+  <!-- Modal lecture mail (au-dessus de l'import) -->
+  <div class="modal-overlay mail-detail-overlay" id="modal-mail-detail" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-mail-detail-title">
+      <div class="modal-head">
+        <h2 id="modal-mail-detail-title">📧 Contenu du message</h2>
+        <button class="modal-close" id="modal-mail-detail-close" type="button" aria-label="Fermer">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="mail-detail-meta" id="mail-detail-meta"></div>
+        <div class="mail-detail-body" id="mail-detail-body">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
+<button type="button" class="tools-fab" id="tools-fab" title="Review & historique">
     ⚙
     <span class="tools-fab-badge" id="tools-fab-badge">0</span>
   </button>
@@ -1630,6 +1977,8 @@
     <button type="button" id="tools-history-btn">
       Historique <span class="tools-count" id="tools-count-history">0</span>
     </button>
+    <button type="button" id="tools-import-btn">Importer Gmail</button>
+
   </div>
 
 <script>
@@ -1948,8 +2297,58 @@
   modalOverlay.addEventListener("click", function (e) {
     if (e.target === modalOverlay) closeModal();
   });
+
+  /* Modal Import Gmail Handling */
+  var modalImportOverlay = document.getElementById("modal-import-overlay");
+  function openImportModal() {
+    var ov = document.getElementById("modal-import-overlay");
+    if (!ov) return;
+    var today = new Date();
+    var yyyy = today.getFullYear();
+    var mm = String(today.getMonth() + 1).padStart(2, "0");
+    var dd = String(today.getDate()).padStart(2, "0");
+    var iso = yyyy + "-" + mm + "-" + dd;
+    var fromEl = document.getElementById("imp-day-from");
+    var toEl = document.getElementById("imp-day-to");
+    // Date par défaut = aujourd'hui à chaque ouverture
+    if (fromEl) fromEl.value = iso;
+    if (toEl) toEl.value = iso;
+    ov.hidden = false;
+  }
+
+  function closeImportModal() {
+    var ov = document.getElementById("modal-import-overlay");
+    if (ov) ov.hidden = true;
+  }
+
+  function openMailDetailModal() {
+    var ov = document.getElementById("modal-mail-detail");
+    if (ov) ov.hidden = false;
+  }
+
+  function closeMailDetailModal() {
+    var ov = document.getElementById("modal-mail-detail");
+    if (ov) ov.hidden = true;
+  }
+  
+  var closeImportBtn = document.getElementById("modal-import-close");
+  if (closeImportBtn) closeImportBtn.addEventListener("click", closeImportModal);
+  if (modalImportOverlay) {
+    modalImportOverlay.addEventListener("click", function (e) {
+      if (e.target === modalImportOverlay) closeImportModal();
+    });
+  }
+
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !modalOverlay.hidden) closeModal();
+    if (e.key === "Escape") {
+      var mailDetail = document.getElementById("modal-mail-detail");
+      if (mailDetail && !mailDetail.hidden) {
+        closeMailDetailModal();
+        return;
+      }
+      if (modalOverlay && !modalOverlay.hidden) closeModal();
+      if (modalImportOverlay && !modalImportOverlay.hidden) closeImportModal();
+    }
   });
 
   function emailBlockHtml(e) {
@@ -2720,6 +3119,13 @@
     var hist = document.getElementById("tools-history-btn");
     if (rev) rev.addEventListener("click", function () { openPanel("review"); });
     if (hist) hist.addEventListener("click", function () { openPanel("history"); });
+
+    var impBtn = document.getElementById("tools-import-btn");
+    if (impBtn) impBtn.addEventListener("click", function () { 
+      menu.classList.remove("open");
+      openImportModal(); 
+    });
+
   })();
 
 
@@ -2951,6 +3357,257 @@
     if (su) su.addEventListener("click", showRegisterForm);
     if (back) back.addEventListener("click", function () {
       showAuth(window.__authFirstSetup);
+    });
+  })();
+
+  
+  // ---------------------------------------------------------------
+  // Import Gmail (preview range/datetime → select → import ids)
+  // ---------------------------------------------------------------
+  (function wireImportPanel() {
+    var mode = "range";
+    var previewMsgs = [];
+
+    function el(id) { return document.getElementById(id); }
+
+    // Toggle des modes "Range" vs "Datetime" avec gestion explicite du display
+    document.querySelectorAll("[data-imp-mode]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        mode = btn.dataset.impMode;
+        document.querySelectorAll("[data-imp-mode]").forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
+        var isRange = mode === "range";
+        
+        // Basculement strict du style d'affichage
+        var rangeFields = el("imp-range-fields");
+        var rangeHint = el("imp-range-hint");
+        var datetimeFields = el("imp-datetime-fields");
+        var datetimeHint = el("imp-datetime-hint");
+
+        if (rangeFields) rangeFields.style.display = isRange ? "flex" : "none";
+        if (rangeHint) rangeHint.style.display = isRange ? "block" : "none";
+        
+        if (datetimeFields) datetimeFields.style.display = isRange ? "none" : "flex";
+        if (datetimeHint) datetimeHint.style.display = isRange ? "none" : "block";
+      });
+    });
+
+    var hourInput = el("imp-hour");
+    if (hourInput) {
+      hourInput.addEventListener("input", function () {
+        if (hourInput.value === "") el("imp-minute").value = "";
+      });
+    }
+
+    function buildPreviewPayload() {
+      var direction = el("imp-direction").value;
+      if (mode === "range") {
+        return {
+          direction: direction,
+          mode: "range",
+          start: Number(el("imp-start").value) || 1,
+          end: Number(el("imp-end").value) || 1,
+        };
+      }
+      var hourVal = el("imp-hour").value;
+      var minVal = el("imp-minute").value;
+      var dayFrom = el("imp-day-from") && el("imp-day-from").value;
+      var dayTo = el("imp-day-to") && el("imp-day-to").value;
+      if (!dayFrom) throw new Error("Choisissez une date de début (Du).");
+      if (!dayTo) dayTo = dayFrom;
+      if (dayTo < dayFrom) throw new Error("La date de fin (Au) doit être ≥ la date de début.");
+      var payload = {
+        direction: direction,
+        mode: "datetime",
+        day: dayFrom,
+        day_to: dayTo,
+      };
+      if (hourVal !== "") payload.hour = Number(hourVal);
+      if (minVal !== "") {
+        if (hourVal === "") throw new Error("Heure requise si minute renseignée.");
+        payload.minute = Number(minVal);
+      }
+      return payload;
+    }
+
+    function renderPreview(messages) {
+      previewMsgs = messages || [];
+      var box = el("imp-preview-list");
+      var toolbar = el("imp-preview-toolbar");
+      toolbar.hidden = false;
+      el("imp-preview-count").innerHTML = "<strong>" + previewMsgs.length + "</strong> mail(s)";
+      if (!previewMsgs.length) {
+        box.innerHTML = '<div class="empty">Aucun e-mail trouvé pour ces critères.</div>';
+        el("imp-run-btn").disabled = true;
+        return;
+      }
+
+      box.innerHTML = previewMsgs.map(function (m, i) {
+        return '<div class="imp-card">' +
+          '<div class="imp-card-header">' +
+            '<input type="checkbox" class="imp-cb" data-gid="' + escapeHtml(m.gmail_id) + '" checked>' +
+            '<div style="flex:1;">' +
+              '<div class="imp-card-title">' + escapeHtml(m.subject || "(sans sujet)") + '</div>' +
+              '<div class="imp-card-meta">' + escapeHtml(m.sender || m.recipient || "—") +
+              " · " + escapeHtml(m.sent_at || "") + '</div>' +
+            '</div>' +
+            '<span class="imp-card-badge">#' + (i + 1) + '</span>' +
+          '</div>' +
+          '<div class="imp-card-actions">' +
+            '<button type="button" class="toggle-body-btn" data-gid="' + escapeHtml(m.gmail_id) +
+            '" data-subject="' + escapeHtml(m.subject || "") + '">📄 Lire le mail</button>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+
+      box.querySelectorAll(".toggle-body-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var gid = btn.dataset.gid;
+          var meta = el("mail-detail-meta");
+          var body = el("mail-detail-body");
+          var title = document.getElementById("modal-mail-detail-title");
+          if (title) title.textContent = "📧 " + (btn.dataset.subject || "Message");
+          if (meta) meta.textContent = "Chargement de " + gid + "…";
+          if (body) body.textContent = "Chargement…";
+          openMailDetailModal();
+          apiPostJson("/import/message", {
+            gmail_id: gid,
+            direction: el("imp-direction").value,
+          })
+            .then(function (data) {
+              if (meta) {
+                meta.innerHTML =
+                  "<div><strong>De</strong> " + escapeHtml(data.sender || "—") + "</div>" +
+                  "<div><strong>À</strong> " + escapeHtml(data.recipient || "—") + "</div>" +
+                  "<div><strong>Date</strong> " + escapeHtml(data.sent_at || "—") + "</div>" +
+                  "<div><strong>Sujet</strong> " + escapeHtml(data.subject || "(sans sujet)") + "</div>";
+              }
+              if (body) body.textContent = data.body || data.snippet || "(corps vide)";
+              if (title) title.textContent = "📧 " + (data.subject || "Message");
+            })
+            .catch(function (err) {
+              if (body) body.textContent = "Erreur : " + err.message;
+              if (meta) meta.textContent = "";
+            });
+        });
+      });
+
+      el("imp-run-btn").disabled = false;
+    }
+
+    function selectedIds() {
+      return Array.prototype.map.call(
+        document.querySelectorAll(".imp-cb:checked"),
+        function (cb) { return cb.dataset.gid; }
+      );
+    }
+
+    function apiPostJson(path, body) {
+      return fetch(getApiUrl() + path, {
+        method: "POST",
+        headers: Object.assign(
+          { "Content-Type": "application/json", "Accept": "application/json" },
+          authHeaders()
+        ),
+        body: JSON.stringify(body),
+      }).then(function (r) {
+        return r.json().then(function (d) {
+          if (!r.ok) {
+            var detail = d.detail;
+            if (Array.isArray(detail)) {
+              detail = detail.map(function (x) { return x.msg || JSON.stringify(x); }).join(", ");
+            }
+            throw new Error(detail || ("HTTP " + r.status));
+          }
+          return d;
+        });
+      });
+    }
+
+    var previewBtn = el("imp-preview-btn");
+    if (previewBtn) {
+      previewBtn.addEventListener("click", function () {
+        var payload;
+        try { payload = buildPreviewPayload(); }
+        catch (err) { setStatus(err.message, true); return; }
+        setStatus("Prévisualisation Gmail…");
+        previewBtn.disabled = true;
+        apiPostJson("/import/preview", payload)
+          .then(function (data) {
+            renderPreview(data.messages || []);
+            setStatus("Prévisualisation : " + (data.count || 0) + " mail(s).");
+          })
+          .catch(function (err) {
+            setStatus("Preview échoué : " + err.message, true);
+          })
+          .finally(function () { previewBtn.disabled = false; });
+      });
+    }
+
+    var selAll = el("imp-select-all");
+    if (selAll) {
+      selAll.addEventListener("click", function () {
+        document.querySelectorAll(".imp-cb").forEach(function (cb) { cb.checked = true; });
+      });
+    }
+    var selNone = el("imp-select-none");
+    if (selNone) {
+      selNone.addEventListener("click", function () {
+        document.querySelectorAll(".imp-cb").forEach(function (cb) { cb.checked = false; });
+      });
+    }
+
+    var runBtn = el("imp-run-btn");
+    if (runBtn) {
+      runBtn.addEventListener("click", function () {
+        var ids = selectedIds();
+        if (!ids.length) { setStatus("Aucun mail coché."); return; }
+        if (!confirm("Importer " + ids.length + " mail(s) ?")) return;
+        setStatus("Import de " + ids.length + " mail(s)…");
+        runBtn.disabled = true;
+        apiPostJson("/import/ids", {
+          direction: el("imp-direction").value,
+          gmail_ids: ids,
+          force_reprocess: el("imp-force-reprocess").checked,
+        })
+          .then(function (data) {
+            setStatus(
+              "Import OK — créés: " + (data.created || 0) +
+              ", existants: " + (data.exists_unchanged || 0) +
+              ", reprocess: " + (data.reprocessed || 0) +
+              ", échecs: " + (data.failed || 0)
+            );
+            closeImportModal();
+            if (typeof loadAll === "function") loadAll();
+          })
+          .catch(function (err) {
+            setStatus("Import échoué : " + err.message, true);
+          })
+          .finally(function () { runBtn.disabled = false; });
+      });
+    }
+  })();
+
+
+  
+  (function wireMailDetailModal() {
+    var closeBtn = document.getElementById("modal-mail-detail-close");
+    var ov = document.getElementById("modal-mail-detail");
+    if (closeBtn) closeBtn.addEventListener("click", closeMailDetailModal);
+    if (ov) {
+      ov.addEventListener("click", function (e) {
+        if (e.target === ov) closeMailDetailModal();
+      });
+    }
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        var d = document.getElementById("modal-mail-detail");
+        if (d && !d.hidden) {
+          closeMailDetailModal();
+          e.stopPropagation();
+        }
+      }
     });
   })();
 

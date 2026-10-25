@@ -35,6 +35,35 @@ class ImportTriggerIn(BaseModel):
     force_reprocess: bool = True
 
 
+class ImportPreviewIn(BaseModel):
+    direction: str = Field("RECEIVED", pattern="^(RECEIVED|SENT)$")
+    mode: str = Field(..., pattern="^(range|datetime)$")
+    start: int | None = Field(None, ge=1, le=500)
+    end: int | None = Field(None, ge=1, le=500)
+    day: str | None = None
+    day_to: str | None = None
+    hour: int | None = Field(None, ge=0, le=23)
+    minute: int | None = Field(None, ge=0, le=59)
+
+
+class ImportMessageIn(BaseModel):
+    gmail_id: str = Field(..., min_length=1)
+    direction: str | None = Field(None, pattern="^(RECEIVED|SENT)$")
+
+
+class ImportIdsIn(BaseModel):
+    direction: str = Field("RECEIVED", pattern="^(RECEIVED|SENT)$")
+    gmail_ids: list[str] = Field(..., min_length=1, max_length=500)
+    force_reprocess: bool = False
+
+
+class ImportRangeIn(BaseModel):
+    direction: str = Field("RECEIVED", pattern="^(RECEIVED|SENT)$")
+    start: int = Field(..., ge=1, le=500)
+    end: int = Field(..., ge=1, le=500)
+    force_reprocess: bool = False
+
+
 def _user_public(row) -> dict:
     return {
         "id": row[0],
@@ -195,5 +224,82 @@ def import_run(payload: ImportTriggerIn, user: dict = Depends(get_current_user))
         )
         body = r.json() if r.content else {}
         return {"status": "ok", "upstream": body, "http": r.status_code}
+    except Exception as exc:
+        raise HTTPException(502, f"mail-importer unreachable: {exc}") from exc
+
+
+@router.post("/import/preview")
+def import_preview(payload: ImportPreviewIn, user: dict = Depends(get_current_user)):
+    """Proxy: liste Gmail (range ou datetime) pour choix dans le dashboard."""
+    body = payload.model_dump(exclude_none=True)
+    try:
+        r = requests.post(
+            f"{MAIL_IMPORTER_URL}/import/preview",
+            json=body,
+            timeout=120,
+        )
+        data = r.json() if r.content else {}
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, data.get("detail") or data)
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"mail-importer unreachable: {exc}") from exc
+
+
+@router.post("/import/ids")
+def import_ids(payload: ImportIdsIn, user: dict = Depends(get_current_user)):
+    """Proxy: importe les gmail_id sélectionnés."""
+    try:
+        r = requests.post(
+            f"{MAIL_IMPORTER_URL}/import/ids",
+            json=payload.model_dump(),
+            timeout=180,
+        )
+        data = r.json() if r.content else {}
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, data.get("detail") or data)
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"mail-importer unreachable: {exc}") from exc
+
+
+@router.post("/import/range")
+def import_range(payload: ImportRangeIn, user: dict = Depends(get_current_user)):
+    """Proxy: import direct par plage d'indices."""
+    try:
+        r = requests.post(
+            f"{MAIL_IMPORTER_URL}/import/range",
+            json=payload.model_dump(),
+            timeout=30,
+        )
+        data = r.json() if r.content else {}
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, data.get("detail") or data)
+        return {"status": "ok", "upstream": data, "http": r.status_code}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"mail-importer unreachable: {exc}") from exc
+
+
+@router.post("/import/message")
+def import_message(payload: ImportMessageIn, user: dict = Depends(get_current_user)):
+    """Proxy: corps complet d'un mail Gmail pour la popup de lecture."""
+    try:
+        r = requests.post(
+            f"{MAIL_IMPORTER_URL}/import/message",
+            json=payload.model_dump(exclude_none=True),
+            timeout=60,
+        )
+        data = r.json() if r.content else {}
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, data.get("detail") or data)
+        return data
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(502, f"mail-importer unreachable: {exc}") from exc
