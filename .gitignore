@@ -1,4 +1,4 @@
 ﻿credentials.json
 token.json
 cleanup_training_examples.py
-db\training_data.txt
+db/training_data.txt
